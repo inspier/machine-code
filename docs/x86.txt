@@ -1,6 +1,6 @@
--*- coding: utf-8; mode: outline -*-
+-*- coding: utf-8; mode: org -*-
 
-This almost documents the (weinholt assembler x86) library.
+This almost documents the (machine-code assembler x86) library.
 
 It’s not yet ready to use! Features are missing and it has not been
 debugged. Lots of instructions can’t be generated. And this manual

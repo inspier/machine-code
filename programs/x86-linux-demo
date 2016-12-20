@@ -1,7 +1,7 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Demo for (weinholt x86 assembler), makes a Linux ELF binary
-;; Copyright © 2011 Göran Weinholt <goran@weinholt.se>
+;; Demo for (machine-code x86 assembler), makes a Linux ELF binary
+;; Copyright © 2011, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -28,10 +28,10 @@
 (import (rnrs)
         (only (srfi :1 lists) list-index)
         (only (srfi :13 strings) string-contains)
-        (weinholt assembler x86)
-        (weinholt assembler elf)
-        (weinholt binfmt elf)
-        (weinholt struct pack))
+        (machine-code assembler x86)
+        (machine-code assembler elf)
+        (machine-code format elf)
+        (machine-code struct pack))
 
 (define segments '(text data))
 

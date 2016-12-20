@@ -23,7 +23,7 @@
 
 (import (rnrs)
         (srfi :78 lightweight-testing)
-        (weinholt disassembler x86))
+        (machine-code disassembler x86))
 
 (define (test mode input)
   (let ((port (open-bytevector-input-port input))

@@ -22,10 +22,10 @@
 
 ;; Disassembler for some of MIPS II (big-endian).
 
-(library (weinholt disassembler mips)
+(library (machine-code disassembler mips)
   (export get-instruction)
   (import (rnrs)
-          (weinholt disassembler private))
+          (machine-code disassembler private))
 
   (define-syntax print
     (syntax-rules ()

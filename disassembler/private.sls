@@ -23,7 +23,7 @@
 ;; Code shared between the disassemblers. Should not be imported by
 ;; anyone else.
 
-(library (weinholt disassembler private)
+(library (machine-code disassembler private)
   (export raise-UD invalid-opcode?)
   (import (rnrs))
 

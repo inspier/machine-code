@@ -22,8 +22,8 @@
 #!r6rs
 
 (import (rnrs)
-        (weinholt assembler x86)
-        (weinholt disassembler x86))
+        (machine-code assembler x86)
+        (machine-code disassembler x86))
 
 (define (print . x) (for-each display x) (newline))
 

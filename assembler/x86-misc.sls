@@ -20,7 +20,7 @@
 ;; DEALINGS IN THE SOFTWARE.
 #!r6rs
 
-(library (weinholt assembler x86-misc)
+(library (machine-code assembler x86-misc)
     (export make-modr/m make-sib bitwidth<=
             number->bytevector)
     (import (rnrs))

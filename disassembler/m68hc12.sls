@@ -23,11 +23,11 @@
 ;; Disassembler for the Motorola 68HC12, 68HCS12, etc. Sometimes
 ;; called CPU12.
 
-(library (weinholt disassembler m68hc12)
+(library (machine-code disassembler m68hc12)
   (export get-instruction)
   (import (except (rnrs) get-u8)
           (only (srfi :1 lists) map-in-order)
-          (weinholt disassembler private))
+          (machine-code disassembler private))
 
 ;;; Port input
   (define (really-get-bytevector-n port n collect tag)

@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2008, 2009, 2010, 2011, 2012 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2012, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -22,7 +22,7 @@
 
 ;; Routines for reading the Executable and Linkable Format (ELF)
 
-(library (weinholt binfmt elf)
+(library (machine-code format elf)
   (export is-elf-image?
           open-elf-image
 
@@ -105,7 +105,7 @@
           STT-LOOS STT-HIOS STT-LOPROC STT-HIPROC)
   (import (rnrs)
           (only (srfi :1 lists) iota)
-          (weinholt struct pack))
+          (machine-code struct pack))
 
 ;;; Utilities
 

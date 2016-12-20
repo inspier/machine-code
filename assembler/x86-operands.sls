@@ -20,7 +20,7 @@
 ;; DEALINGS IN THE SOFTWARE.
 #!r6rs
 
-(library (weinholt assembler x86-operands)
+(library (machine-code assembler x86-operands)
     (export registers lookup-register
             register?
             register-name register-type register-index
@@ -35,7 +35,7 @@
             far-pointer-seg far-pointer-offset
             translate-operands operand-labels)
     (import (rnrs)
-            (weinholt assembler x86-misc))
+            (machine-code assembler x86-misc))
 
 ;;; Register operands
 

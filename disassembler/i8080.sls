@@ -22,11 +22,11 @@
 
 ;; Disassembler for Intel 8080/8085
 
-(library (weinholt disassembler i8080)
+(library (machine-code disassembler i8080)
   (export get-instruction)
   (import (rnrs)
           (only (srfi :1 lists) map-in-order)
-          (weinholt disassembler private))
+          (machine-code disassembler private))
 
   ;; Intel 8080 opcode table. These are "undocumented": arhl, dsub,
   ;; jx5, jnx5, ldhi, ldsi, lhlx, rdel, rstv, shlx.

@@ -1,7 +1,7 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
 ;; fcdisasm - The Full-Color Disassembler
-;; Copyright © 2008, 2009, 2010, 2011 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -28,12 +28,12 @@
 
 (import (rnrs)
         (only (srfi :1 lists) list-index)
-        (weinholt binfmt elf)
-        (prefix (weinholt disassembler i8080) i8080:)
-        (prefix (weinholt disassembler m68hc12) m68hc12:)
-        (prefix (weinholt disassembler mips) mips:)
-        (prefix (weinholt disassembler x86) x86:)
-        (only (weinholt disassembler x86) invalid-opcode?))
+        (machine-code format elf)
+        (prefix (machine-code disassembler i8080) i8080:)
+        (prefix (machine-code disassembler m68hc12) m68hc12:)
+        (prefix (machine-code disassembler mips) mips:)
+        (prefix (machine-code disassembler x86) x86:)
+        (only (machine-code disassembler x86) invalid-opcode?))
 
 (define archs
   (list (cons "x86-16" (lambda (p c) (x86:get-instruction p 16 c)))

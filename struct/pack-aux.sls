@@ -20,10 +20,10 @@
 ;; DEALINGS IN THE SOFTWARE.
 #!r6rs
 
-;; Auxiliary library for (weinholt struct). Please don't use this
+;; Auxiliary library for (machine-code struct). Please don't use this
 ;; library directly.
 
-(library (weinholt struct pack-aux)
+(library (machine-code struct pack-aux)
   (export format-size roundb add)
   (import (for (rnrs) (meta -1)))
 

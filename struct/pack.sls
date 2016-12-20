@@ -138,10 +138,10 @@
 ;; The calls to bytevector-zero! are there to put in zeros where the
 ;; padding is. The bitwise-and is to align the indices.
 
-(library (weinholt struct pack)
+(library (machine-code struct pack)
   (export format-size pack pack! unpack get-unpack)
   (import (rnrs)
-          (for (prefix (weinholt struct pack-aux) aux:)
+          (for (prefix (machine-code struct pack-aux) aux:)
                expand run))
 
   (define-syntax unpack*

@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2011, 2012 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2011, 2012, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -22,11 +22,11 @@
 
 ;; Translation of ELF structures into assembler directives.
 
-(library (weinholt assembler elf)
+(library (machine-code assembler elf)
   (export elf-32-assembler elf-64-assembler)
   (import (rnrs)
-          (weinholt binfmt elf)
-          (weinholt struct pack))
+          (machine-code format elf)
+          (machine-code struct pack))
 
   ;; 32-bit ELF
   (define (elf-32-assembler x)

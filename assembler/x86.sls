@@ -60,13 +60,13 @@
 ;; TODO: errors need to contain a list of the last few instructions
 ;; before the current bad instruction.
 
-(library (weinholt assembler x86)
+(library (machine-code assembler x86)
     (export assemble)
     (import (rnrs)
             (only (srfi :13 strings) string-index)
-            (weinholt assembler x86-operands)
-            (weinholt assembler x86-misc)
-            (weinholt disassembler x86-opcodes))
+            (machine-code assembler x86-operands)
+            (machine-code assembler x86-misc)
+            (machine-code disassembler x86-opcodes))
 
   (define-syntax print
     (syntax-rules ()

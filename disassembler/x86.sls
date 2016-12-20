@@ -36,12 +36,12 @@
 ;; an operand that can be used to decide the operand size, no such
 ;; suffix is necessary.
 
-(library (weinholt disassembler x86)
+(library (machine-code disassembler x86)
   (export get-instruction invalid-opcode?)
   (import (except (rnrs) get-u8)
           (srfi :39 parameters)
-          (weinholt disassembler private)
-          (weinholt disassembler x86-opcodes))
+          (machine-code disassembler private)
+          (machine-code disassembler x86-opcodes))
 
   (define debug #f)
 

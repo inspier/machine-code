@@ -23,7 +23,7 @@
 
 (import (rnrs)
         (srfi :78 lightweight-testing)
-        (weinholt disassembler m68hc12))
+        (machine-code disassembler m68hc12))
 
 (define (d bv)
   (let ((p (open-bytevector-input-port bv)))
