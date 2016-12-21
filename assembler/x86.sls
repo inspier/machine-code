@@ -1,6 +1,6 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
 ;; Assembler for the Intel x86-16/32/64 instruction set.
-;; Copyright © 2008, 2009, 2010, 2011, 2012, 2014, 2015 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2012, 2014, 2015, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -33,10 +33,6 @@
 
 ;; And by the way, it's not really ready to be used.
 
-;;; Documentation
-
-;; See documentation/x86.txt
-
 ;;; TODO
 
 ;; Optimize: Jz, Jb and RIP-relative displacements. Also pick the
@@ -63,7 +59,6 @@
 (library (machine-code assembler x86)
     (export assemble)
     (import (rnrs)
-            (only (srfi :13 strings) string-index)
             (machine-code assembler x86-operands)
             (machine-code assembler x86-misc)
             (machine-code disassembler x86-opcodes))
@@ -95,6 +90,13 @@
           (else #f)))
 
   (define (string-split1 s c)
+    (define (string-index s c)
+      (let lp ((i 0))
+        (and (not (fx=? i (string-length s)))
+             (let ((c* (string-ref s i)))
+               (if (eq? c c*)
+                   i
+                   (lp (fx+ i 1)))))))
     (let ((i (string-index s c)))
       (and i (list (substring s 0 i)
                    (substring s (+ 1 i) (string-length s))))))
@@ -1419,7 +1421,7 @@
                (state (make-assembler-state 16 #f 0
                                             (make-eq-hashtable)
                                             #f '() symbols)))
-        (display (list 'assembly 'pass: pass)) (newline)
+        (print "assembly pass: " pass)
         (let-values (((tmpport extract) (open-bytevector-output-port)))
           (assembler-state-port-set! state tmpport)
           (for-each (lambda (i) (assemble! i state)) code)

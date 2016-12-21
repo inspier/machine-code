@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2010, 2012 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2010, 2012, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -24,8 +24,14 @@
 ;; anyone else.
 
 (library (machine-code disassembler private)
-  (export raise-UD invalid-opcode?)
+  (export raise-UD invalid-opcode? map-in-order)
   (import (rnrs))
+
+  (define (map-in-order p l)
+    (if (null? l)
+        '()
+        (cons (p (car l))
+              (map-in-order p (cdr l)))))
 
   (define-condition-type &invalid-opcode &condition
     make-invalid-opcode invalid-opcode?)

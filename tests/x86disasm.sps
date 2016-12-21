@@ -22,7 +22,7 @@
 #!r6rs
 
 (import (rnrs)
-        (srfi :78 lightweight-testing)
+        (machine-code tests check)
         (machine-code disassembler x86))
 
 (define (test mode input)
@@ -925,3 +925,4 @@
         '(bnd.jnz (+ rip #x-6)))
 
 (check-report)
+(exit (if (check-passed? 114) 0 1))

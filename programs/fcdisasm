@@ -27,7 +27,6 @@
 ;; hex dump!
 
 (import (rnrs)
-        (only (srfi :1 lists) list-index)
         (machine-code format elf)
         (prefix (machine-code disassembler i8080) i8080:)
         (prefix (machine-code disassembler m68hc12) m68hc12:)

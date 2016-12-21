@@ -1,6 +1,6 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Copyright © 2008, 2009, 2010, 2011 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -21,61 +21,53 @@
 ;; DEALINGS IN THE SOFTWARE.
 #!r6rs
 
+;; TODO: More systematic testing.
+
 (import (rnrs)
         (machine-code assembler x86)
-        (machine-code disassembler x86))
+        (machine-code disassembler x86)
+        (machine-code tests check))
 
-(define (print . x) (for-each display x) (newline))
+(define-syntax test
+  (syntax-rules (=>)
+    ((_ instruction mode)
+     (check (round-trip instruction mode) => instruction))
+    ((_ instruction mode => expected)
+     (check (round-trip instruction mode) => expected))))
 
-(define (test instruction mode . rest)
-  ;; Check that it's possible to encode the given instruction, and
-  ;; compare the disassembly with the input.
-  (let ((expected (if (pair? rest) (car rest) instruction)))
-    (let*-values (((bv symbols) (assemble (list '(%origin 0)
-                                                `(%mode ,mode)
-                                                instruction)))
-                  ((port) (open-bytevector-input-port bv))
-                  ((bytes-returned) 0))
-      (let ((instruction
-             (get-instruction port mode
-                              (lambda (_ . bytes)
-                                (set! bytes-returned (+ (length bytes)
-                                                        bytes-returned))))))
-        (unless (equal? instruction expected)
-          (print "Expected: " expected)
-          (print "Result: " instruction)
-          (print "Binary: " bv)
-          (error 'test "Disassembly is not as expected"
-                 expected instruction bv)))
+(define-syntax testf
+  (syntax-rules (=>)
+    ((_ instruction mode)
+     (check (guard (con (else 'not-encodable))
+              (encode instruction mode))
+            => 'not-encodable))))
 
+(define (round-trip instruction mode)
+  ;; Check that it's possible to encode the given instruction and then
+  ;; disassemble it.
+  (let*-values (((bv symbols) (assemble (list '(%origin 0)
+                                              `(%mode ,mode)
+                                              instruction)))
+                ((port) (open-bytevector-input-port bv))
+                ((bytes-returned) 0))
+    (let ((instruction
+           (get-instruction port mode
+                            (lambda (_ . bytes)
+                              (set! bytes-returned (+ (length bytes)
+                                                      bytes-returned))))))
       (unless (eof-object? (lookahead-u8 port))
-        (error 'test "After disassembly there are bytes unread."
+        (error 'round-trip "After disassembly there are bytes unread."
                (get-instruction port mode #f)))
       (unless (= bytes-returned (bytevector-length bv))
-        (error 'test "There are bytes missing in the collector function."
-               bytes-returned (bytevector-length bv)))))
-  (display "OK\n"))
+        (error 'round-trip "There are bytes missing in the collector function."
+               bytes-returned (bytevector-length bv)))
+      instruction)))
 
-(define (testf instruction mode)
-  ;; Check that it's not possible to encode the given instruction
-  (unless (guard (con (else (display "OK\n")))
-            (call-with-values
-              (lambda () (assemble (list '(%origin 0)
-                                         `(%mode ,mode)
-                                         instruction)))
-              list)
-            #f)
-    (error 'testf "test did not fail" instruction mode)))
-
-(define (test= instruction mode expected)
-  ;; Encode the instruction and compare it with the given bytevector
+(define (encode instruction mode)
   (let-values (((bv syms) (assemble (list '(%origin 0)
                                           `(%mode ,mode)
                                           instruction))))
-    (unless (bytevector=? expected bv)
-      (error 'test "Assembly is not as expected"
-             instruction expected bv))))
-
+    bv))
 
 (test '(hlt) 64)
 
@@ -117,55 +109,51 @@
 (test '(mov (mem16+ rax) #xffff) 64)
 (test '(mov (mem32+ rax) #xffffffff) 64)
 (test '(mov (mem64+ rax) #x-7fffffff) 64
-      '(mov (mem64+ rax) #xffffffff80000001))
+      => '(mov (mem64+ rax) #xffffffff80000001))
 
-(for-each (lambda (i) (test i 64))
-          '((cbw) (cwde) (cdqe)
-            (cwd) (cdq) (cqo)))
-
+(test '(cbw) 64)
+(test '(cwde) 64)
+(test '(cdqe) 64)
+(test '(cwd) 64)
+(test '(cdq) 64)
+(test '(cqo) 64)
 
 ;; Default operand size of 64:
-(test= '(jmp rax) 64 '#vu8(#xff #xe0))
+(check (encode '(jmp rax) 64) => #vu8(#xff #xe0))
 (testf '(jmp eax) 64)
-;; FIXME: the operand size override is missing here... not that important.
-;; (test= '(jmp ax) 64 '#vu8(#x66 #xff #xe0))
-
-(test= '(jmp eax) 32 '#vu8(#xff #xe0))
+(check (encode '(jmp ax) 64) => #vu8(#x66 #xff #xe0))
+(check (encode '(jmp eax) 32) => #vu8(#xff #xe0))
 
 ;;; Segment and address size override
 
-(for-each (lambda (i) (test i 64))
-          '((stos (mem8+ edi) al)
-            (stos (mem8+ rdi) al)
-            (stos (mem16+ rdi) ax)
-            (stos (mem32+ rdi) eax)
-            (stos (mem64+ rdi) rax)
-            (movs (mem32+ rdi) (mem32+ rsi))
-            (movs (mem32+ rdi) (mem32+ fs rsi))))
-
+(test '(stos (mem8+ edi) al) 64)
+(test '(stos (mem8+ rdi) al) 64)
+(test '(stos (mem16+ rdi) ax) 64)
+(test '(stos (mem32+ rdi) eax) 64)
+(test '(stos (mem64+ rdi) rax) 64)
+(test '(movs (mem32+ rdi) (mem32+ rsi)) 64)
+(test '(movs (mem32+ rdi) (mem32+ fs rsi)) 64)
 (testf '(movs (mem32+ rdi) (mem32+ rsi es)) 64)
 
-(for-each (lambda (i) (test i 32))
-          '((movs (mem8+ es edi) (mem8+ ds esi))
-            (movs (mem8+ es edi) (mem8+ es esi))
-            (movs (mem8+ es edi) (mem8+ fs esi))))
+(test '(movs (mem8+ es edi) (mem8+ ds esi)) 32)
+(test '(movs (mem8+ es edi) (mem8+ es esi)) 32)
+(test '(movs (mem8+ es edi) (mem8+ fs esi)) 32)
 
 (test '(movs (mem+ es edi) (mem16+ esi)) 32
-      '(movs (mem16+ es edi) (mem16+ ds esi)))
+      => '(movs (mem16+ es edi) (mem16+ ds esi)))
 
 ;;; Prefixes
 
-(for-each (lambda (i) (test i 64))
-          '((rep.stos (mem8+ rdi) al)
-            (rep.stos (mem32+ rdi) eax)
-            (repz.scas rax (mem64+ rdi))
-            (repnz.scas rax (mem64+ rdi))
-            (lock.xchg (mem64+ rax) rbx)))
+(test '(rep.stos (mem8+ rdi) al) 64)
+(test '(rep.stos (mem32+ rdi) eax) 64)
+(test '(repz.scas rax (mem64+ rdi)) 64)
+(test '(repnz.scas rax (mem64+ rdi)) 64)
+(test '(lock.xchg (mem64+ rax) rbx) 64)
 
 ;;; Various memory references
 
 (test '(mov r15 (mem+ rax 12 (* rbx wordsize))) 64
-      '(mov r15 (mem64+ rax 12 (* rbx 8))))
+      => '(mov r15 (mem64+ rax 12 (* rbx 8))))
 
 (test '(mov rax (mem64+ rax #x0a00)) 64)
 (test '(mov (mem64+ rax #x0a00) rax) 64)
@@ -174,7 +162,7 @@
 (test '(mov rax (mem64+ rip #x100)) 64)
 (test '(mov rax (mem64+ 0)) 64)
 (test '(mov rax (mem64+ rbp)) 64
-      '(mov rax (mem64+ rbp 0)))
+      => '(mov rax (mem64+ rbp 0)))
 (test '(mov rax (mem64+ rbp 0)) 64)
 (test '(mov rax (mem64+ rbp #xff)) 64)
 (test '(mov rax (mem64+ rbp #x100)) 64)
@@ -190,15 +178,15 @@
 
 
 (test '(mov rax (mem64+ rax rbx)) 64
-      '(mov rax (mem64+ rax (* rbx 1))))
+      => '(mov rax (mem64+ rax (* rbx 1))))
 
 (test '(mov rax (mem64+ (* rbx 4))) 64
-      '(mov rax (mem64+ 0 (* rbx 4))))
+      => '(mov rax (mem64+ 0 (* rbx 4))))
 
 (test '(mov rax (mem64+ rdx (* rbx 4))) 64)
 
 (test '(mov rax (mem64+ rdx 0 (* rbx 8))) 64
-      '(mov rax (mem64+ rdx (* rbx 8))))
+      => '(mov rax (mem64+ rdx (* rbx 8))))
 
 (test '(mov rax (mem64+ rdx 127 (* rbx 8))) 64)
 
@@ -206,16 +194,16 @@
 
 
 (test '(mov rax (mem64+ rbp (* 8 rbx))) 64
-      '(mov rax (mem64+ rbp 0 (* rbx 8))))
+      => '(mov rax (mem64+ rbp 0 (* rbx 8))))
 
 
 (test '(mov r15 (mem64+ r15 -1 (* r15 8))) 64)
 
 ;; 32-bit memory in 64-bit mode
-(test '(mov r15 (mem64+ edi -1 (* eax 8))) 64) 
+(test '(mov r15 (mem64+ edi -1 (* eax 8))) 64)
 (test '(mov r15 (mem64+ 0)) 64)
 (test '(mov r15d (mem32+ edi -1)) 64)
-(test '(mov eax (mem32+ ebp 0)) 64) 
+(test '(mov eax (mem32+ ebp 0)) 64)
 
 ;;; 64-bit stuff in 32-bit mode
 
@@ -240,11 +228,12 @@
 
 ;;; NOP
 
-(for-each (lambda (mode)
-            (test '(nop) mode)
-            (test '(pause) mode))
-          '(16 32 64))
-
+(test '(nop) 16)
+(test '(nop) 32)
+(test '(nop) 64)
+(test '(pause) 16)
+(test '(pause) 32)
+(test '(pause) 64)
 (test '(xchg eax eax) 16)
 (test '(xchg rax rax) 64)
 (test '(xchg r8w ax) 64)
@@ -264,7 +253,9 @@
 
 ;;; Moffset
 
-(test '(mov (mem64+ #xff00ff00ffffffff) rax) 64)
+;; Disabled for now.
+
+;; (test '(mov (mem64+ #xff00ff00ffffffff) rax) 64)
 
 ;; The problem with these: the Eb opsyntax eagerly accepts them, but
 ;; then can't encode them. Solution: make Eb (etc) stricter?
@@ -279,5 +270,7 @@
       ;; (mov (mem+ #xff00ff00ffffffff) al)
       ;; (mov (mem+ #xff00ff00ffffffff) ax)
       ;; (mov (mem+ #xff00ff00ffffffff) eax)
-      ;; (mov (mem+ #xff00ff00ffffffff) rax)
+;; (mov (mem+ #xff00ff00ffffffff) rax)
 
+(check-report)
+(exit (if (check-passed? 106) 0 1))

@@ -54,6 +54,10 @@
           elf-image-sections
           elf-image-symbols
 
+          make-string-table string-table? string-table-empty?
+          string-table-size string-table-bytes
+          string-table-list-index string-table-byte-index
+
           ELF-MAGIC
 
           ;; elf-image-word-size, elf-image-endianness
@@ -104,7 +108,6 @@
           STT-NOTYPE STT-OBJECT STT-FUNC STT-SECTION STT-FILE
           STT-LOOS STT-HIOS STT-LOPROC STT-HIPROC)
   (import (rnrs)
-          (only (srfi :1 lists) iota)
           (machine-code struct pack))
 
 ;;; Utilities
@@ -134,6 +137,47 @@
              (unless (zero? byte)
                (put-u8 p byte)
                (lp (+ offset 1)))))))))
+
+  ;; A helper type for keeping track of string tables, which are
+  ;; encoded as bytevectors with NUL-terminated strings.
+  (define-record-type string-table
+    (fields (mutable strings) indices port^ extract^)
+    (protocol
+     (lambda (p)
+       (lambda (initial-string*)
+         (let-values (((port extract) (open-bytevector-output-port)))
+           (let ((table (p '() (make-hashtable string-hash string=?) port extract)))
+             (for-each (lambda (str) (string-table-add! table str))
+                       initial-string*)
+             table))))))
+
+  (define (string-table-empty? table)
+    (null? (string-table-strings table)))
+
+  (define (string-table-size table)
+    (hashtable-size (string-table-indices table)))
+
+  (define (string-table-add! table str)
+    (let ((port (string-table-port^ table)))
+      (hashtable-set! (string-table-indices table)
+                      str
+                      (cons (string-table-size table) (port-position port)))
+      (string-table-strings-set! table `(,@(string-table-strings table) ,str))
+      (put-bytevector port (string->utf8 str))
+      (put-u8 port #x00)))
+
+  (define (string-table-list-index table str)
+    (cond ((hashtable-ref (string-table-indices table) str #f) => car)
+          (else
+           (error 'string-table-list-index "String not in table" table str))))
+
+  (define (string-table-byte-index table str)
+    (cond ((hashtable-ref (string-table-indices table) str #f) => cdr)
+          (else
+           (error 'string-table-list-index "String not in table" table str))))
+
+  (define (string-table-bytes table)
+    ((string-table-extract^ table)))
 
 ;;;
 
@@ -467,13 +511,15 @@
 
   (define (elf-image-sections image)
     (let ((section-names (get-elf-section-names image)))
-      (map (lambda (i)
-             (let* ((sh (get-elf-section image i))
-                    (name (asciiz->string section-names (elf-section-name sh))))
-               (cons name sh)))
-           (iota (elf-image-shnum image)))))
+      (do ((i 0 (fx+ i 1))
+           (section* '() (let* ((sh (get-elf-section image i))
+                                (name (asciiz->string section-names (elf-section-name sh))))
+                           (cons (cons name sh) section*))))
+          ((fx=? i (elf-image-shnum image))
+           (reverse section*)))))
 
   (define (elf-image-segments image)
-    (map (lambda (i)
-           (get-elf-segment image i))
-         (iota (elf-image-phnum image)))))
+    (do ((i 0 (fx+ i 1))
+         (segment* '() (cons (get-elf-segment image i) segment*)))
+        ((fx=? i (elf-image-phnum image))
+         (reverse segment*)))))

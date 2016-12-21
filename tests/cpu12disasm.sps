@@ -1,6 +1,6 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Copyright © 2009, 2010 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2009, 2010, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -22,7 +22,7 @@
 #!r6rs
 
 (import (rnrs)
-        (srfi :78 lightweight-testing)
+        (machine-code tests check)
         (machine-code disassembler m68hc12))
 
 (define (d bv)
@@ -91,3 +91,4 @@
 (check (d #vu8(#xB7 #xB3)) => '(exg tmp3 tmp2))
 
 (check-report)
+(exit (if (check-passed? 44) 0 1))

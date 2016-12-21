@@ -26,8 +26,6 @@
 ;; that prints a familiar greeting.
 
 (import (rnrs)
-        (only (srfi :1 lists) list-index)
-        (only (srfi :13 strings) string-contains)
         (machine-code assembler x86)
         (machine-code assembler elf)
         (machine-code format elf)
@@ -35,13 +33,7 @@
 
 (define segments '(text data))
 
-(define sections '("" ".text" ".data" ".shstrtab" ".strtab" ".symtab"))
-
-(define shstrtab
-  (call-with-string-output-port
-    (lambda (p)
-      (for-each (lambda (name) (put-string p name) (put-char p #\nul))
-                sections))))
+(define sections (make-string-table '("" ".text" ".data" ".shstrtab" ".strtab" ".symtab")))
 
 (define (elf32-header entry)
   (define ph-start (vector))
@@ -51,9 +43,9 @@
                          ET-EXEC EM-386 EV-CURRENT
                          entry
                          (if (null? segments) 0 '(- _elf_ph_start _elf_start))
-                         (if (null? sections) 0 '(- _elf_sh_start _elf_start))
-                         0 #f #f (length segments) #f (length sections)
-                         (or (list-index (lambda (s) (string=? s ".shstrtab")) sections)
+                         (if (string-table-empty? sections) 0 '(- _elf_sh_start _elf_start))
+                         0 #f #f (length segments) #f (string-table-size sections)
+                         (or (string-table-list-index sections ".shstrtab")
                              SHN-UNDEF)))
     ;; Program header for text
     (%label _elf_ph_start)
@@ -72,36 +64,35 @@
     (%label _elf_sh_start)
     ,@(elf-32-assembler (make-elf-section 0 SHT-NULL 0 0 0 0 0 0 0 0))
     ,@(elf-32-assembler (make-elf-section
-                         (string-contains shstrtab ".text")
+                         (string-table-byte-index sections ".text")
                          SHT-PROGBITS
                          (bitwise-ior SHF-EXECINSTR SHF-ALLOC)
                          'text '(- text _elf_start) '(- _fini text)
                          0 0 0 #f))
     ,@(elf-32-assembler (make-elf-section
-                         (string-contains shstrtab ".data")
+                         (string-table-byte-index sections ".data")
                          SHT-PROGBITS
                          (bitwise-ior SHF-WRITE SHF-ALLOC)
                          'data_start '(- _fini _elf_start) '(- _edata data_start)
                          0 0 0 #f))
     ,@(elf-32-assembler (make-elf-section
-                         (string-contains shstrtab ".shstrtab")
+                         (string-table-byte-index sections ".shstrtab")
                          SHT-STRTAB
                          0 0 '(- _shstrtab_start _elf_start)
                          '(- _shstrtab_end _shstrtab_start)
                          0 0 0 #f))
     ,@(elf-32-assembler (make-elf-section
-                         (string-contains shstrtab ".strtab")
+                         (string-table-byte-index sections ".strtab")
                          SHT-STRTAB
                          0 0 '(- _strtab_start _elf_start)
                          '(- _strtab_end _strtab_start)
                          0 0 0 #f))
     ,@(elf-32-assembler (make-elf-section
-                         (string-contains shstrtab ".symtab")
+                         (string-table-byte-index sections ".symtab")
                          SHT-SYMTAB
                          0 0 '(- _symtab_start _elf_start)
                          '(- _symtab_end _symtab_start)
-                         (list-index (lambda (s) (string=? s ".strtab"))
-                                     sections)
+                         (string-table-list-index sections ".strtab")
                          0 0 #f))))
 
 (define hello-world
@@ -150,7 +141,7 @@
               (- -4096 (- _end bss)))
            bss _end)                    ;rewind back to .text
     (%label _shstrtab_start)
-    (%vu8 ,(string->utf8 shstrtab))
+    (%vu8 ,(string-table-bytes sections))
     (%label _shstrtab_end)
 
     ;; Generating the symbol table properly would involve using a
@@ -170,8 +161,7 @@
     ,@(elf-32-assembler
        (make-elf-symbol '(- _strtab_start_start _strtab_start)
                         STB-GLOBAL STT-FUNC 0
-                        (list-index (lambda (s) (string=? s ".text"))
-                                    sections)
+                        (string-table-list-index sections ".text")
                         'start '_fini))
     (%label _symtab_end)))
 

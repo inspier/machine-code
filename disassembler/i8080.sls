@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2010, 2012 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2010, 2012, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -25,7 +25,6 @@
 (library (machine-code disassembler i8080)
   (export get-instruction)
   (import (rnrs)
-          (only (srfi :1 lists) map-in-order)
           (machine-code disassembler private))
 
   ;; Intel 8080 opcode table. These are "undocumented": arhl, dsub,
