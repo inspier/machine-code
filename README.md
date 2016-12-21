@@ -1,5 +1,7 @@
 # machine-code
 
+[![Build Status](https://travis-ci.org/weinholt/machine-code.svg?branch=master)](https://travis-ci.org/weinholt/machine-code)
+
 Machine code is often hidden from view and difficult to work with.
 This project aims to lift the veil.
 
