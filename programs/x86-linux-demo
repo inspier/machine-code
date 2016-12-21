@@ -113,7 +113,7 @@
     (mov eax 4)                            ;write
     (int #x80)
 
-    (mov ebx 42)                        ;status
+    (mov ebx 0)                         ;status
     (mov eax 1)                         ;exit
     (int #x80)
 
