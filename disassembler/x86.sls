@@ -39,7 +39,6 @@
 (library (machine-code disassembler x86)
   (export get-instruction invalid-opcode?)
   (import (except (rnrs) get-u8)
-          (srfi :39 parameters)
           (machine-code disassembler private)
           (machine-code disassembler x86-opcodes))
 
@@ -71,9 +70,8 @@
          (exists (lambda (op) (memq op '(In Kpd Kps Kss Ksd Lo Lx)))
                  (cdr instr))))
 
-  (define limiter (make-parameter #f))
-
 ;;; Simple byte decoding
+
   (define (ModR/M-mod byte)
     (fxbit-field byte 6 8))
 
@@ -207,8 +205,8 @@ no conflict with LES/LDS)."
       (raise-UD "This instruction requires a VEX prefix")))
 
 ;;; Port input
-  (define (really-get-bytevector-n port n collect tag)
-    ((limiter) n collect tag)
+  (define (really-get-bytevector-n port n collect limiter tag)
+    (limiter n collect tag)
     (let ((bv (get-bytevector-n port n)))
       (unless (eof-object? bv)
         (if collect (apply collect tag (bytevector->u8-list bv))))
@@ -216,36 +214,36 @@ no conflict with LES/LDS)."
         (raise-UD "End of file inside instruction"))
       bv))
 
-  (define (get-u8 port)
-    (bytevector-u8-ref (really-get-bytevector-n port 1 #f #f)
+  (define (get-u8 port limiter)
+    (bytevector-u8-ref (really-get-bytevector-n port 1 #f limiter #f)
                        0))
 
-  (define (get-u8/collect port collect tag)
-    (bytevector-u8-ref (really-get-bytevector-n port 1 collect tag)
+  (define (get-u8/collect port collect limiter tag)
+    (bytevector-u8-ref (really-get-bytevector-n port 1 collect limiter tag)
                        0))
 
-  (define (get-s8/collect port collect tag)
-    (bytevector-s8-ref (really-get-bytevector-n port 1 collect tag)
+  (define (get-s8/collect port collect limiter tag)
+    (bytevector-s8-ref (really-get-bytevector-n port 1 collect limiter tag)
                        0))
 
-  (define (get-s16/collect port collect tag)
-    (bytevector-s16-ref (really-get-bytevector-n port 2 collect tag)
+  (define (get-s16/collect port collect limiter tag)
+    (bytevector-s16-ref (really-get-bytevector-n port 2 collect limiter tag)
                         0 (endianness little)))
 
-  (define (get-u16/collect port collect tag)
-    (bytevector-u16-ref (really-get-bytevector-n port 2 collect tag)
+  (define (get-u16/collect port collect limiter tag)
+    (bytevector-u16-ref (really-get-bytevector-n port 2 collect limiter tag)
                         0 (endianness little)))
 
-  (define (get-s32/collect port collect tag)
-    (bytevector-s32-ref (really-get-bytevector-n port 4 collect tag)
+  (define (get-s32/collect port collect limiter tag)
+    (bytevector-s32-ref (really-get-bytevector-n port 4 collect limiter tag)
                         0 (endianness little)))
 
-  (define (get-u32/collect port collect tag)
-    (bytevector-u32-ref (really-get-bytevector-n port 4 collect tag)
+  (define (get-u32/collect port collect limiter tag)
+    (bytevector-u32-ref (really-get-bytevector-n port 4 collect limiter tag)
                         0 (endianness little)))
 
-  (define (get-u64/collect port collect tag)
-    (bytevector-u64-ref (really-get-bytevector-n port 8 collect tag)
+  (define (get-u64/collect port collect limiter tag)
+    (bytevector-u64-ref (really-get-bytevector-n port 8 collect limiter tag)
                         0 (endianness little)))
 
 ;;; Register names
@@ -411,7 +409,7 @@ operand is an opcode extension."
        instruction)))
 
 ;;; Instruction stream decoding
-  (define (get-displacement port mode collect prefixes modr/m address-size)
+  (define (get-displacement port mode collect limiter prefixes modr/m address-size)
     "Reads a SIB and a memory offset, if present. Returns a memory
 reference or a register number. This is later passed to
 translate-displacement."
@@ -425,15 +423,15 @@ translate-displacement."
                      ;; them as negative numbers? At least if they are
                      ;; large enough...
                      (if (or (not (eqv? mode 64)) sib?)
-                         (list (get-s32/collect port collect (tag disp)))
+                         (list (get-s32/collect port collect limiter (tag disp)))
                          (list (if (fx=? address-size 64) 'rip 'eip)
-                               (get-s32/collect port collect (tag disp)))))
+                               (get-s32/collect port collect limiter (tag disp)))))
                     (else
                      (list (vector-ref regs register)))))
           ((#b01) (list (vector-ref regs register)
-                        (get-s8/collect port collect (tag disp))))
+                        (get-s8/collect port collect limiter (tag disp))))
           ((#b10) (list (vector-ref regs register)
-                        (get-s32/collect port collect (tag disp))))))
+                        (get-s32/collect port collect limiter (tag disp))))))
       (if (fx=? mod #b11)
           r/m                           ;register operand
           (if (fx=? address-size 16)
@@ -441,15 +439,15 @@ translate-displacement."
                                (si) (di) (bp) (bx))))
                 (case mod
                   ((#b00) (if (fx=? r/m #b110)
-                              (list (get-s16/collect port collect (tag disp)))
+                              (list (get-s16/collect port collect limiter (tag disp)))
                               (vector-ref addr16 r/m)))
                   ((#b01) (append (vector-ref addr16 r/m)
-                                  (list (get-s8/collect port collect (tag disp)))))
+                                  (list (get-s8/collect port collect limiter (tag disp)))))
                   ((#b10) (append (vector-ref addr16 r/m)
-                                  (list (get-s16/collect port collect (tag disp)))))))
+                                  (list (get-s16/collect port collect limiter (tag disp)))))))
               (let ((regs (if (fx=? address-size 64) reg-names64 reg-names32))
                     (sib (and (fx=? (ModR/M-r/m modr/m) #b100)
-                              (get-u8/collect port collect (tag sib)))))
+                              (get-u8/collect port collect limiter (tag sib)))))
                 (if sib
                     (append (mem32/64 (SIB-base sib prefixes) regs #t)
                             (if (fx=? (SIB-index sib prefixes) #b100)
@@ -534,7 +532,7 @@ translate-displacement."
                      ((enum-set-member? (prefix ss) prefixes) 'ss)
                      (else default))))))
 
-  (define (get-operand port mode collect op prefixes opcode vex.v
+  (define (get-operand port mode collect limiter op prefixes opcode vex.v
                        operand-size address-size modr/m
                        disp /is4)
     (let get-operand ((op op))
@@ -543,15 +541,15 @@ translate-displacement."
                          ((16) 'ip)
                          ((32) 'eip)
                          ((64) 'rip))
-                    (get-s8/collect port collect (tag disp))))
+                    (get-s8/collect port collect limiter (tag disp))))
         ((Jz)
          (let ((rip (case mode
                       ((16) 'ip)
                       ((32) 'eip)
                       ((64) 'rip))))
            (case operand-size
-             ((16) (list '+ rip (get-s16/collect port collect (tag disp))))
-             ((32 64) (list '+ rip (get-s32/collect port collect (tag disp)))))))
+             ((16) (list '+ rip (get-s16/collect port collect limiter (tag disp))))
+             ((32 64) (list '+ rip (get-s32/collect port collect limiter (tag disp)))))))
 
         ((Md/q)                         ;FIXME: verify
          (translate-displacement prefixes mode disp
@@ -618,30 +616,30 @@ translate-displacement."
                              op))
                        x)))))
 
-        ((Ib) (get-u8/collect port collect (tag immediate)))
+        ((Ib) (get-u8/collect port collect limiter (tag immediate)))
         ((IbS)
          ;; Sign extended immediate byte (not official opsyntax)
-         (let ((byte (get-u8/collect port collect (tag immediate))))
+         (let ((byte (get-u8/collect port collect limiter (tag immediate))))
            (if (bitwise-bit-set? byte 7)
                (case operand-size
                  ((16) (bitwise-ior #xff00 byte))
                  ((32) (bitwise-ior #xffffff00 byte))
                  ((64) (bitwise-ior #xffffffffffffff00 byte)))
                byte)))
-        ((Iw) (get-u16/collect port collect (tag immediate)))
-        ((Id) (get-u32/collect port collect (tag immediate)))
+        ((Iw) (get-u16/collect port collect limiter (tag immediate)))
+        ((Id) (get-u32/collect port collect limiter (tag immediate)))
         ((Iv)
          ((case operand-size
             ((16) get-u16/collect)
             ((32) get-u32/collect)
             ((64) get-u64/collect))
-          port collect (tag immediate)))
+          port collect limiter (tag immediate)))
         ((Iz)
          (case operand-size
-           ((16) (get-u16/collect port collect (tag immediate)))
-           ((32) (get-u32/collect port collect (tag immediate)))
+           ((16) (get-u16/collect port collect limiter (tag immediate)))
+           ((32) (get-u32/collect port collect limiter (tag immediate)))
            ((64)
-            (let ((imm (get-u32/collect port collect (tag immediate))))
+            (let ((imm (get-u32/collect port collect limiter (tag immediate))))
               (if (bitwise-bit-set? imm 31)
                   (bitwise-ior #xffffffff00000000 imm)
                   imm)))))
@@ -652,7 +650,7 @@ translate-displacement."
                   ((16) get-u16/collect)
                   ((32) get-u32/collect)
                   ((64) get-u64/collect))
-                port collect (tag disp))))
+                port collect limiter (tag disp))))
         ((Ov)
          ;; FIXME: is this correct?
          (list (case operand-size
@@ -663,13 +661,13 @@ translate-displacement."
                   ((16) get-u16/collect)
                   ((32) get-u32/collect)
                   ((64) get-u64/collect))
-                port collect (tag disp))))
+                port collect limiter (tag disp))))
         ;; Far pointer
         ((Ap)
          (let* ((off (if (= operand-size 32)
-                         (get-u32/collect port collect (tag disp))
-                         (get-u16/collect port collect (tag disp))))
-                (ss (get-u16/collect port collect (tag disp))))
+                         (get-u32/collect port collect limiter (tag disp))
+                         (get-u16/collect port collect limiter (tag disp))))
+                (ss (get-u16/collect port collect limiter (tag disp))))
            (list 'far ss off)))
 
         ;; String operation operands
@@ -913,7 +911,7 @@ translate-displacement."
         (else
          (error 'get-operand "Unimplemented opsyntax" op)))))
 
-  (define (get-operands port mode collect prefixes instr modr/m opcode vex.v d64)
+  (define (get-operands port mode collect limiter prefixes instr modr/m opcode vex.v d64)
     (let* ((operand-size (case mode
                            ((64) (cond ((enum-set-member? (prefix rex.w) prefixes) 64)
                                        ((enum-set-member? (prefix operand) prefixes) 16)
@@ -931,10 +929,10 @@ translate-displacement."
                            ((16) (cond ((enum-set-member? (prefix address) prefixes) 32)
                                        (else 16)))))
            (modr/m (or modr/m (and (has-modr/m? instr)
-                                   (get-u8/collect port collect (tag modr/m)))))
+                                   (get-u8/collect port collect limiter (tag modr/m)))))
            (disp (and (number? modr/m)
-                      (get-displacement port mode collect prefixes modr/m address-size)))
-           (/is4 (and (has-/is4? instr) (get-u8/collect port collect (tag /is4)))))
+                      (get-displacement port mode collect limiter prefixes modr/m address-size)))
+           (/is4 (and (has-/is4? instr) (get-u8/collect port collect limiter (tag /is4)))))
       ;; At this point in the instruction stream, the only things left
       ;; are I, J and O (immediate, jump offset, offset) values.
       (when debug
@@ -950,7 +948,7 @@ translate-displacement."
                       (let lp ((op* (cdr instr)))
                         (if (null? op*)
                             '()
-                            (cons (get-operand port mode collect (car op*) prefixes
+                            (cons (get-operand port mode collect limiter (car op*) prefixes
                                                opcode vex.v
                                                operand-size address-size modr/m
                                                disp /is4)
@@ -962,11 +960,11 @@ translate-displacement."
              (x (fix-rep x prefixes)))
         x)))
 
-  (define (get-instruction* port mode collect)
+  (define (get-instruction* port mode collect limiter)
     (let more-opcode ((opcode-table opcodes)
                       (vex.v #f)
                       (prefixes (prefix-set)))
-      (let ((opcode (get-u8 port)))
+      (let ((opcode (get-u8 port limiter)))
         (let lp ((instr (vector-ref opcode-table opcode))
                  (modr/m #f)
                  (opcode opcode)
@@ -978,8 +976,8 @@ translate-displacement."
             ((and (= opcode #xC4) (or (= mode 64) (lookahead-is-valid-VEX? port))
                   (not (enum-set-member? (prefix vex) prefixes)))
              ;; Three-byte VEX prefix
-             (let* ((byte1 (get-u8 port))
-                    (byte2 (get-u8 port)))
+             (let* ((byte1 (get-u8 port limiter))
+                    (byte2 (get-u8 port limiter)))
                (collect (tag prefix) opcode byte1 byte2)
                (VEX-prefix-check prefixes mode)
                (more-opcode (VEX-m-mmmm->table byte1)
@@ -989,7 +987,7 @@ translate-displacement."
             ((and (= opcode #xC5) (or (= mode 64) (lookahead-is-valid-VEX? port))
                   (not (enum-set-member? (prefix vex) prefixes)))
              ;; Two-byte VEX prefix
-             (let ((byte1 (get-u8 port)))
+             (let ((byte1 (get-u8 port limiter)))
                (collect (tag prefix) opcode byte1)
                (VEX-prefix-check prefixes mode)
                (more-opcode (vector-ref opcodes #x0F)
@@ -999,8 +997,8 @@ translate-displacement."
             ((and (eq? instr (vector-ref opcodes #x8F)) ;ugly
                   (lookahead-is-valid-XOP? port))
              ;; Three-byte XOP prefix
-             (let* ((byte1 (get-u8 port))
-                    (byte2 (get-u8 port)))
+             (let* ((byte1 (get-u8 port limiter))
+                    (byte2 (get-u8 port limiter)))
                (collect (tag prefix) opcode byte1 byte2)
                (VEX-prefix-check prefixes mode)
                (more-opcode (XOP-map-select->table byte1)
@@ -1029,7 +1027,7 @@ translate-displacement."
              (when (and (enum-set-member? (prefix vex) prefixes)
                         (not vex-traversed))
                (raise-UD "VEX was used but a legacy instruction was found"))
-             (get-operands port mode collect prefixes instr modr/m opcode vex.v d64))
+             (get-operands port mode collect limiter prefixes instr modr/m opcode vex.v d64))
 
             ;; Traverse the instruction table
 
@@ -1037,7 +1035,7 @@ translate-displacement."
              ;; Read a ModR/M byte and use the fields as opcode
              ;; extension.
              (collect (tag opcode) opcode)
-             (let* ((modr/m (get-u8/collect port collect (tag modr/m)))
+             (let* ((modr/m (get-u8/collect port collect limiter (tag modr/m)))
                     (v (vector-ref instr (if (and (> (vector-length instr) 3)
                                                   (= (ModR/M-mod modr/m) #b11))
                                              3 2)))
@@ -1116,7 +1114,7 @@ translate-displacement."
              ;; register. Used for the MOVLPS/MOVHLPS and
              ;; MOVHPS/MOVLHPS instructions (mnemonics differ) and
              ;; VMOVSD (operands differ).
-             (let ((modr/m (get-u8 port)))
+             (let ((modr/m (get-u8 port limiter)))
                (collect (tag opcode) opcode)
                (collect (tag modr/m) modr/m)
                (lp (vector-ref instr
@@ -1169,7 +1167,7 @@ translate-displacement."
 
             (else
              (collect (tag opcode) opcode)
-             (let ((opcode (get-u8 port)))
+             (let ((opcode (get-u8 port limiter)))
                ;; A new opcode table (two-byte or three-byte opcode)
                (lp (vector-ref instr opcode)
                    modr/m opcode
@@ -1183,20 +1181,20 @@ translate-displacement."
   ;; All bytes read from the port will be passed to the collector.
   (define (get-instruction port mode collect)
     (let ((collect (or collect (lambda x #f))))
-      (parameterize ((limiter
-                      (let ((have-read 0))
-                        ;; The limiter works to stop get-instruction
-                        ;; from reading more than 15 bytes.
-                        (lambda (wanted-bytes collect tag)
-                          (when (> (+ have-read wanted-bytes) 15)
-                            (let* ((n (- 15 have-read))
-                                   (bv (get-bytevector-n port n)))
-                              (unless (or (eof-object? bv) (zero? n))
-                                (if collect (apply collect tag (bytevector->u8-list bv))))
-                              (when (or (eof-object? bv) (< (bytevector-length bv) n))
-                                (raise-UD "End of file inside oversized instruction"))
-                              (raise-UD "Instruction too long")))
-                          (set! have-read (+ have-read wanted-bytes))))))
+      (let ((limiter
+             (let ((have-read 0))
+               ;; The limiter works to stop get-instruction
+               ;; from reading more than 15 bytes.
+               (lambda (wanted-bytes collect tag)
+                 (when (> (+ have-read wanted-bytes) 15)
+                   (let* ((n (- 15 have-read))
+                          (bv (get-bytevector-n port n)))
+                     (unless (or (eof-object? bv) (zero? n))
+                       (apply collect tag (bytevector->u8-list bv)))
+                     (when (or (eof-object? bv) (< (bytevector-length bv) n))
+                       (raise-UD "End of file inside oversized instruction"))
+                     (raise-UD "Instruction too long")))
+                 (set! have-read (+ have-read wanted-bytes))))))
         (if (eof-object? (lookahead-u8 port))
             (eof-object)
-            (get-instruction* port mode collect))))))
+            (get-instruction* port mode collect limiter))))))
