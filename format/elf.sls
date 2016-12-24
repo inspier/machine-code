@@ -52,6 +52,7 @@
 
           elf-image-section-by-name
           elf-image-sections
+          elf-image-segments
           elf-image-symbols
 
           make-string-table string-table? string-table-empty?
