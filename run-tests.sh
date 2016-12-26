@@ -6,6 +6,7 @@ function cleanup {
 }
 trap cleanup EXIT
 
+tests/arm-a64.sps
 tests/cpu12disasm.sps
 tests/string-table.sps
 tests/x86asm.sps

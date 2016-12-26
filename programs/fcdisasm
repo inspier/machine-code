@@ -28,6 +28,7 @@
 
 (import (rnrs)
         (machine-code format elf)
+        (prefix (machine-code disassembler arm-a64) arm-a64:)
         (prefix (machine-code disassembler i8080) i8080:)
         (prefix (machine-code disassembler m68hc12) m68hc12:)
         (prefix (machine-code disassembler mips) mips:)
@@ -35,7 +36,8 @@
         (only (machine-code disassembler x86) invalid-opcode?))
 
 (define archs
-  (list (cons "x86-16" (lambda (p c) (x86:get-instruction p 16 c)))
+  (list (cons "arm-a64" (lambda (p c) (arm-a64:get-instruction p c)))
+        (cons "x86-16" (lambda (p c) (x86:get-instruction p 16 c)))
         (cons "x86-32" (lambda (p c) (x86:get-instruction p 32 c)))
         (cons "x86-64" (lambda (p c) (x86:get-instruction p 64 c)))
         (cons "hc12" (lambda (p c) (m68hc12:get-instruction p c)))
@@ -138,7 +140,8 @@
           (lp new-pos new-pc (next-symbol symbols new-pc)))))))
 
 (define (get-elf-disassembler machine endianness)
-  (cond #;((= machine EM-ARM) (lambda (p c) (arm:get-instruction p #f c)))
+  (cond #;((= machine EM-ARM) (lambda (p c) (arm:get-instruction p c)))
+        ((= machine EM-AARCH6) (lambda (p c) (arm-a64:get-instruction p c)))
         ((= machine EM-386) (lambda (p c) (x86:get-instruction p 32 c)))
         ((= machine EM-X86-64) (lambda (p c) (x86:get-instruction p 64 c)))
         ((= machine EM-68HC12) (lambda (p c) (m68hc12:get-instruction p c)))
@@ -217,8 +220,8 @@ Usage: fcdisasm [-b|--bits <bits>] [-a|--arch <arch>] [--nocolor] [--] <filename
 The <bits> argument can be either 16 (default), 32 or 64 This is
 shorthand for --arch x86-16 etc.
 
-The <arch> is one of x86-16, x86-32, x86-64, hc12, mipsel, mipsbe,
-8080. It is used for non-ELF files.
+The <arch> is one of arm-a64, x86-16, x86-32, x86-64, hc12, mipsel,
+mipsbe, 8080. It is used for non-ELF files.
 
 The --nocolor flag suppresses the color output.
 

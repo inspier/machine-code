@@ -81,7 +81,7 @@
           EM-NONE EM-M32 EM-SPARC EM-386 EM-68K EM-88K EM-860
           EM-MIPS EM-MIPS-RS3-LE EM-PARISC EM-SPARC32PLUS EM-PPC
           EM-PPC64 EM-S390 EM-ARM EM-SPARCV9 EM-IA-64 EM-68HC12
-          EM-X86-64 EM-68HC11
+          EM-X86-64 EM-68HC11 EM-AARCH6
           elf-machine-names
 
           ;; elf-section-type, elf-section-link, elf-section-info
@@ -259,6 +259,7 @@
   (define EM-68HC12 53)
   (define EM-X86-64 62)
   (define EM-68HC11 70)
+  (define EM-AARCH6 183)
 
   (define elf-machine-names
     (list (cons EM-NONE "No machine")
@@ -280,7 +281,8 @@
           (cons EM-IA-64 "Intel IA-64 Processor Architecture")
           (cons EM-68HC12 "Motorola M68HC12")
           (cons EM-X86-64 "AMD x86-64 architecture")
-          (cons EM-68HC11 "Motorola MC68HC11 microcontroller")))
+          (cons EM-68HC11 "Motorola MC68HC11 microcontroller")
+          (cons EM-AARCH6 "ARM 64-bit architecture (AArch64)")))
 
   (define-record-type elf-image
     (fields port word-size endianness os-abi abi-version

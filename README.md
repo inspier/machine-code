@@ -63,9 +63,10 @@ The x86-demo and x86-linux-demo programs build simple object files.
 
 The disassembler libraries all export a `get-instruction` procedure
 that takes an input port and a *collect* procedure. (The MIPS
-disassembler also takes an endianness). The *collect* procedure can be
-*#f*; otherwise it is called with groups of bytes that have been read
-from the instruction stream.
+disassembler also takes an endianness, and the x86 disassembler takes
+an operating mode). The *collect* procedure can be *#f*; otherwise it
+is called with groups of bytes that have been read from the
+instruction stream.
 
 ## Contributions
 
