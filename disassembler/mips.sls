@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2009, 2010, 2012 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2009, 2010, 2012, 2016 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -267,4 +267,11 @@
                      (bytevector->u8-list bv)
                      (or collect (lambda (tag . bytes) #f)))))
           (else
-           (eof-object)))))
+           (eof-object))))
+
+  (let ((min 4)
+        (max 4))
+    (register-disassembler
+     (make-disassembler 'mipsel min max (lambda (p c) (get-instruction p (endianness little) c))))
+    (register-disassembler
+     (make-disassembler 'mipsbe min max (lambda (p c) (get-instruction p (endianness big) c))))))

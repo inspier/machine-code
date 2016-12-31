@@ -24,7 +24,13 @@
 ;; anyone else.
 
 (library (machine-code disassembler private)
-  (export raise-UD invalid-opcode? map-in-order)
+  (export raise-UD invalid-opcode? map-in-order
+          register-disassembler
+          available-disassemblers get-disassembler
+          make-disassembler disassembler? disassembler-name
+          disassembler-min-instruction-size
+          disassembler-max-instruction-size
+          disassembler-instruction-getter)
   (import (rnrs))
 
   (define (map-in-order p l)
@@ -41,4 +47,24 @@
             (make-who-condition 'get-instruction)
             (make-message-condition msg)
             (make-irritants-condition irritants)
-            (make-invalid-opcode)))))
+            (make-invalid-opcode))))
+
+  (define-record-type disassembler
+    (fields name
+            min-instruction-size
+            max-instruction-size
+            instruction-getter))
+
+  (define *registered-disassemblers* '())
+
+  (define (register-disassembler disassembler)
+    (set! *registered-disassemblers* (cons (cons (disassembler-name disassembler)
+                                                 disassembler)
+                                           *registered-disassemblers*)))
+
+  (define (available-disassemblers)
+    (map car *registered-disassemblers*))
+
+  (define (get-disassembler name)
+    (cond ((assq name *registered-disassemblers*) => cdr)
+          (else #f))))

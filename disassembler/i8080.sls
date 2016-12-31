@@ -116,4 +116,9 @@
               (map-in-order get-operand (cdr instr)))))
     (if (port-eof? port)
         (eof-object)
-        (get-operands opcodes (get-u8/collect port collect 'opcode)))))
+        (get-operands opcodes (get-u8/collect port collect 'opcode))))
+
+  (let ((min 1)
+        (max 3))
+    (register-disassembler
+     (make-disassembler 'i8080 min max get-instruction))))

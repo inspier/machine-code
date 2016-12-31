@@ -22,28 +22,17 @@
 ;; DEALINGS IN THE SOFTWARE.
 #!r6rs
 
-;; This program is an example of how to use (industria disassembler
-;; x86) and a novelty: first disassembler to go *full color* for the
-;; hex dump!
+;; This program is an example of how to use (industria disassembler)
+;; and a novelty: first disassembler to go *full color* for the hex
+;; dump!
 
 (import (rnrs)
         (machine-code format elf)
-        (prefix (machine-code disassembler arm-a64) arm-a64:)
-        (prefix (machine-code disassembler i8080) i8080:)
-        (prefix (machine-code disassembler m68hc12) m68hc12:)
-        (prefix (machine-code disassembler mips) mips:)
-        (prefix (machine-code disassembler x86) x86:)
-        (only (machine-code disassembler x86) invalid-opcode?))
-
-(define archs
-  (list (cons "arm-a64" (lambda (p c) (arm-a64:get-instruction p c)))
-        (cons "x86-16" (lambda (p c) (x86:get-instruction p 16 c)))
-        (cons "x86-32" (lambda (p c) (x86:get-instruction p 32 c)))
-        (cons "x86-64" (lambda (p c) (x86:get-instruction p 64 c)))
-        (cons "hc12" (lambda (p c) (m68hc12:get-instruction p c)))
-        (cons "mipsel" (lambda (p c) (mips:get-instruction p (endianness little) c)))
-        (cons "mipsbe" (lambda (p c) (mips:get-instruction p (endianness big) c)))
-        (cons "8080" (lambda (p c) (i8080:get-instruction p c)))))
+        (only (machine-code disassembler)
+              invalid-opcode?
+              available-disassemblers get-disassembler
+              disassembler-max-instruction-size
+              disassembler-instruction-getter))
 
 ;; Print an instruction with hexadecimal numbers.
 (define (print-instr/sexpr i)
@@ -62,7 +51,7 @@
         (else
          (display i))))
 
-(define (disassemble p get-instruction color end-position pc symbols)
+(define (disassemble p disassembler color end-position pc symbols)
   (define (display-addr addr)
     (let ((x (number->string addr 16)))
       (if (< (string-length x) 8)
@@ -74,16 +63,17 @@
           ((or (> pc (cadar symbols))
                (= pc (caadr symbols)))
            (next-symbol (cdr symbols) pc))
-          
           (else symbols)))
+  (define get-instruction (disassembler-instruction-getter disassembler))
+  (define hex-width (+ 1 (* 2 (disassembler-max-instruction-size disassembler))))
   (let lp ((pos (port-position p))
            (pc pc)
            (symbols (next-symbol symbols pc)))
     (let* ((tagged-bytes '())
            (i (guard (con
                       ((invalid-opcode? con)
-                       (list 'bad:
-                             (condition-message con))))
+                       `(bad: ,(condition-message con)
+                              ,@(condition-irritants con))))
                 (get-instruction p
                                  (lambda x
                                    (set! tagged-bytes (cons x tagged-bytes))))))
@@ -133,29 +123,34 @@
                   (reverse tagged-bytes))
         (when color
           (display "\x1b;[0m"))
-        (display (make-string (- 31 (* 2 (- new-pos pos))) #\space))
+        (display (make-string (- hex-width (* 2 (- new-pos pos))) #\space))
         (print-instr/sexpr i)
         (newline)
         (let ((new-pc (+ pc (- new-pos pos))))
           (lp new-pos new-pc (next-symbol symbols new-pc)))))))
 
-(define (get-elf-disassembler machine endianness)
-  (cond #;((= machine EM-ARM) (lambda (p c) (arm:get-instruction p c)))
-        ((= machine EM-AARCH6) (lambda (p c) (arm-a64:get-instruction p c)))
-        ((= machine EM-386) (lambda (p c) (x86:get-instruction p 32 c)))
-        ((= machine EM-X86-64) (lambda (p c) (x86:get-instruction p 64 c)))
-        ((= machine EM-68HC12) (lambda (p c) (m68hc12:get-instruction p c)))
-        ((= machine EM-MIPS) (lambda (p c) (mips:get-instruction p endianness c)))
-        (else
-         (display "No support for this architecture: ")
-         (cond ((assv machine elf-machine-names) =>
-                (lambda (n) (display (cdr n))))
-               (else
-                (display "Unknown architecture (")
-                (display machine)
-                (display ")")))
-         (newline)
-         (exit))))
+(define (elf-architecture-symbol image)
+  ;; XXX: Move to (machine-code format elf)
+  (let ((machine (elf-image-machine image))
+        (endianness (elf-image-endianness image))
+        (entry (elf-image-entry image)))
+    (cond ((and (= machine EM-ARM) (= (bitwise-and entry #b1) #b1)) 'arm-t32)
+          ((and (= machine EM-ARM) (= (bitwise-and entry #b11) #b00)) 'arm-a32)
+          ((= machine EM-AARCH6) 'arm-a64)
+          ((= machine EM-386) 'x86-32)
+          ((= machine EM-X86-64) 'x86-64)
+          ((= machine EM-68HC12) 'm68hc12)
+          ((= machine EM-MIPS) (if (= endianness ELFDATA2LSB) 'mipsel 'mipsbe))
+          (else
+           (display "No support for this architecture: ")
+           (cond ((assv machine elf-machine-names) =>
+                  (lambda (n) (display (cdr n))))
+                 (else
+                  (display "Unknown architecture (")
+                  (display machine)
+                  (display ")")))
+           (newline)
+           (exit)))))
 
 ;; Returns a list of (start-addr end-addr symbol) in increasing order.
 (define (parse-elf-symbols image)
@@ -188,15 +183,13 @@
          (let* ((image (open-elf-image filename))
                 (text (elf-image-section-by-name image ".text")))
            (cond ((and text (= (elf-section-type text) SHT-PROGBITS))
-                  (let ((get-instruction (get-elf-disassembler
-                                          (elf-image-machine image)
-                                          (if (= (elf-image-endianness image) 1)
-                                              (endianness little) (endianness big))))
+                  (let ((arch (elf-architecture-symbol image))
                         (symbols (parse-elf-symbols image)))
                     (set-port-position! (elf-image-port image)
                                         (elf-section-offset text))
                     (disassemble (elf-image-port image)
-                                 get-instruction color
+                                 (get-disassembler arch)
+                                 color
                                  (+ (elf-section-offset text)
                                     (elf-section-size text))
                                  (elf-section-addr text)
@@ -206,7 +199,7 @@
                   (display "No disassembly for you.\n")))))
         (else
          (disassemble (open-file-input-port filename)
-                      (cdr (assoc arch archs))
+                      (get-disassembler (string->symbol arch))
                       color #f 0 '()))))
 
 (define (parse-args args)
@@ -215,25 +208,26 @@
       (when msg (display (car msg) x) (newline x) (newline x))
       (display "fcdisasm - Full-color disassembler
 
-Usage: fcdisasm [-b|--bits <bits>] [-a|--arch <arch>] [--nocolor] [--] <filename>
+Usage:
+  fcdisasm [-b|--bits <bits>] [-a|--arch <arch>] [--nocolor] [--] <filename>
 
-The <bits> argument can be either 16 (default), 32 or 64 This is
-shorthand for --arch x86-16 etc.
+The <bits> argument can be either 16 (default), 32 or 64. This is
+shorthand for --arch x86-<bits>.
 
-The <arch> is one of arm-a64, x86-16, x86-32, x86-64, hc12, mipsel,
-mipsbe, 8080. It is used for non-ELF files.
-
+The <arch> argument, used for raw binary files, is one of these:
+" x)
+      (let lp ((arch* (available-disassemblers)))
+        (unless (null? arch*)
+          (display (car arch*))
+          (unless (null? (cdr arch*))
+            (display ", "))
+          (lp (cdr arch*))))
+      (display ".\n")
+      (display "
 The --nocolor flag suppresses the color output.
 
-The colors used are:
- * Blue for ModR/M and SIB bytes
- * Green for opcode bytes
- * Yellow for prefix bytes
- * White for immediates
- * Magenta for offsets.
-
 Author: Göran Weinholt <goran@weinholt.se>.
-" x)
+")
       (exit 1)))
   (let lp ((filename #f)
            (color #t)
@@ -253,7 +247,7 @@ Author: Göran Weinholt <goran@weinholt.se>.
                   (help "ERROR: invalid argument for --bits flag"))))
           ((member (car args) '("-a" "--arch"))
            (if (null? (cdr args)) (help "ERROR: -a needs an argument"))
-           (cond ((assoc (cadr args) archs) =>
+           (cond ((memq (string->symbol (cadr args)) (available-disassemblers)) =>
                   (lambda (_)
                     (lp filename color (cadr args) (cddr args))))
                  (else

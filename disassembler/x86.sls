@@ -37,10 +37,12 @@
 ;; suffix is necessary.
 
 (library (machine-code disassembler x86)
-  (export get-instruction invalid-opcode?)
+  (export get-instruction)
   (import (except (rnrs) get-u8)
           (machine-code disassembler private)
           (machine-code disassembler x86-opcodes))
+
+  (define maximum-instruction-size 15)
 
   (define debug #f)
 
@@ -1197,4 +1199,12 @@ translate-displacement."
                  (set! have-read (+ have-read wanted-bytes))))))
         (if (eof-object? (lookahead-u8 port))
             (eof-object)
-            (get-instruction* port mode collect limiter))))))
+            (get-instruction* port mode collect limiter)))))
+
+  (let ((min 1) (max 15))
+    (register-disassembler
+     (make-disassembler 'x86-16 min max (lambda (p c) (get-instruction p 16 c))))
+    (register-disassembler
+     (make-disassembler 'x86-32 min max (lambda (p c) (get-instruction p 32 c))))
+    (register-disassembler
+     (make-disassembler 'x86-64 min max (lambda (p c) (get-instruction p 64 c))))))

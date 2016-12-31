@@ -336,4 +336,9 @@
              (get-u8/collect port collect 'opcode)
              (get-operands opcodes-18 (get-u8/collect port collect 'opcode)))
             (else
-             (get-operands opcodes (get-u8/collect port collect 'opcode)))))))
+             (get-operands opcodes (get-u8/collect port collect 'opcode))))))
+
+  (let ((min 1)
+        (max 5))
+    (register-disassembler
+     (make-disassembler 'm68hc12 min max get-instruction))))
