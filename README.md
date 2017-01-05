@@ -17,8 +17,8 @@ The x86/amd64 assembler is operational, but not recommended for
 general use. Creating ELF object files is possible only through
 crafting the correct assembler directives yourself.
 
-The disassemblers are operational: x86-16, x86-32, x86-64, hc12,
-mipsel, mipsbe, and 8080.
+The disassemblers are operational: arm-a64, m68hc12, i8080, x86-64,
+x86-32, x86-16, mipsbe, and mipsel.
 
 The ELF library is useful for read operations.
 
@@ -67,6 +67,21 @@ disassembler also takes an endianness, and the x86 disassembler takes
 an operating mode). The *collect* procedure can be *#f*; otherwise it
 is called with groups of bytes that have been read from the
 instruction stream.
+
+## New in 2.0.0
+
+### Generic disassembler library
+
+The new `(machine-code disassembler)` library provides an abstract
+interface to all current and future disassemblers.
+
+### Incompatible change
+
+The procedure signatures for all disassemblers has changed. An
+additional `pc` argument has been added. It can be the current program
+counter (the address of the instruction) or `#f`. If it's `#f` then
+symbolic expressions are used in place of a computed PC-relative
+address.
 
 ## Contributions
 

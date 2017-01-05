@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2010, 2012, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2010, 2012, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -77,7 +77,7 @@
        ;; f0
        (rp) (pop psw) (jp Jw) (di) (cp Jw) (push psw) (ori d8) (rst 6)
        (rm) (sphl) (jm Jw) (ei) (cm Jw) (jx5 Jw) (cpi d8) (rst 7)))
-  
+
 ;;; Port input
   (define (really-get-bytevector-n port n collect tag)
     (let ((bv (get-bytevector-n port n)))
@@ -96,8 +96,8 @@
                         0 (endianness little)))
 
 ;;; Disassembler
-  
-  (define (get-instruction port collect)
+
+  (define (get-instruction port collect pc)
     (define (get-operand type)
       (case type
         ((addr) (list 'mem8+ (get-u16/collect port collect 'immediate)))
@@ -118,7 +118,17 @@
         (eof-object)
         (get-operands opcodes (get-u8/collect port collect 'opcode))))
 
-  (let ((min 1)
-        (max 3))
+  ;; Generic disassembler support.
+  (let ((min 1) (max 3))
+    (define (wrap-get-instruction)
+      (define get-instruction*
+        (case-lambda
+          ((port)
+           (get-instruction port #f #f))
+          ((port collect)
+           (get-instruction port collect #f))
+          ((port collect pc)
+           (get-instruction port collect pc))))
+      get-instruction*)
     (register-disassembler
-     (make-disassembler 'i8080 min max get-instruction))))
+     (make-disassembler 'i8080 min max (wrap-get-instruction)))))

@@ -1,6 +1,6 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Copyright © 2009, 2010, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2009, 2010, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -27,7 +27,7 @@
 
 (define (d bv)
   (let ((p (open-bytevector-input-port bv)))
-    (let ((instr (get-instruction p (lambda x #f))))
+    (let ((instr (get-instruction p #f #f)))
       (unless (port-eof? p)
         (error 'd "Bytes remain to be disassembled" (get-bytevector-all p)))
       instr)))

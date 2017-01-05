@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -110,12 +110,14 @@
         `(lsl ,v ,shift)))
 
   (define (pc-rel pc offset)
-    `(+ pc ,offset))
+    (if pc
+        (+ pc offset)
+        `(+ pc ,offset)))
 
   (define (pc-rel-page pc offset)
     (if pc
-        (pc-rel (bitwise-and pc (bitwise-not 4096)) offset)
-        (pc-rel `(bitwise-and pc (bitwise-not 4096)) offset)))
+        (pc-rel (bitwise-and pc (bitwise-not 4095)) offset)
+        (pc-rel `(bitwise-and pc ,(bitwise-not 4095)) offset)))
 
   ;; Pure memory reference
   (define (mem+ reg offset)
@@ -182,15 +184,17 @@
 
   (define-encoding (main pc instr (31) (28 op0) (24))
     (select pc instr
-            #;unallocated
+            unallocated
             data-processing/imm
             branch/exception/system
             loads/stores
             data-processing/reg
             data-processing/simd&fp))
 
-  ;; (define-encoding (unallocated pc instr (31) (28 (= #b00)) (26))
-  ;;   `(%u32 ,instr))
+  (define-encoding (unallocated pc instr (31) (28 (= #b00)) (26))
+    (decode
+     [(and (= instr 0))
+      `(%u32 ,instr)]))                 ;it's probably padding
 
 ;;; C4.2
 
@@ -730,21 +734,33 @@
   (define (dummy-collect tag . bytes)
     #f)
 
-  (define (get-instruction port collect)
-    (define (get-u32 port)
-      (let ((bv (get-bytevector-n port 4)))
-        (and (bytevector? bv)
-             (fx=? (bytevector-length bv) 4)
-             bv)))
+  (define (get-u32 port)
+    (let ((bv (get-bytevector-n port 4)))
+      (and (bytevector? bv)
+           (fx=? (bytevector-length bv) 4)
+           bv)))
+
+  (define (get-instruction port collect pc)
     (cond ((get-u32 port) =>
            (lambda (bv)
-             (decode #f (bytevector-u32-ref bv 0 (endianness little))
-                     (bytevector->u8-list bv)
-                     (or collect dummy-collect))))
+             (let ((instruction (bytevector-u32-ref bv 0 (endianness little))))
+               (decode pc instruction
+                       (bytevector->u8-list bv)
+                       (or collect dummy-collect)))))
           (else
            (eof-object))))
 
+  ;; Generic disassembler support.
   (let ((min 4) (max 4))
+    (define (wrap-get-instruction)
+      (define get-instruction*
+        (case-lambda
+          ((port)
+           (get-instruction port #f #f))
+          ((port collect)
+           (get-instruction port collect #f))
+          ((port collect pc)
+           (get-instruction port collect pc))))
+      get-instruction*)
     (register-disassembler
-     (make-disassembler 'arm-a64 min max (lambda (p c) (get-instruction p c)))))
-  )
+     (make-disassembler 'arm-a64 min max (wrap-get-instruction)))))

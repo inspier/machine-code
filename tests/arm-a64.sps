@@ -1,6 +1,6 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Copyright © 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -34,13 +34,13 @@
               ((invalid-opcode? con)
                `(bad: ,(condition-message con)
                       ,@(condition-irritants con))))
-        (let ((instr (get-instruction p #f)))
+        (let ((instr (get-instruction p #f #x4100)))
           (assert (port-eof? p))
           instr)))))
 
 (check (d #x913FE210) => '(add x16 x16 #xff8))
 
-(check (d #x54000040) => '(b.eq (+ pc #x8)))
+(check (d #x54000040) => '(b.eq #x4108))
 
 (check (d #xa9bf7bfd) => '(stp x29 x30 (mempre+ sp -16))) ;stp x29, x30, [sp, #-16]!
 (check (d #xa9001c06) => '(stp x6 x7 (mem+ x0)))  ;stp x6, x7, [x0]
@@ -63,7 +63,8 @@
 (check (d #xf240097f) => '(tst x11 #x7))
 (check (d #xf251009f) => '(tst x4 #x800000000000))
 
-
+(check (d #x90000141) => '(adrp x1 #x2c000))
+(check (d #x10000061) => '(adr x1 #x410c))
 
 (check-report)
-(exit (if (check-passed? 21) 0 1))
+(exit (if (check-passed? 23) 0 1))

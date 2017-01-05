@@ -1,7 +1,7 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
 ;; fcdisasm - The Full-Color Disassembler
-;; Copyright © 2008, 2009, 2010, 2011, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -76,7 +76,10 @@
                               ,@(condition-irritants con))))
                 (get-instruction p
                                  (lambda x
-                                   (set! tagged-bytes (cons x tagged-bytes))))))
+                                   ;; FIXME: This should handle words,
+                                   ;; not only bytes.
+                                   (set! tagged-bytes (cons x tagged-bytes)))
+                                 pc)))
            (new-pos (port-position p)))
       ;; Print info from the symbol table
       (unless (null? symbols)
@@ -198,9 +201,10 @@
                   (display "This ELF image has no .text section with executable code.\n")
                   (display "No disassembly for you.\n")))))
         (else
+         ;; Assume a DOS .com file.
          (disassemble (open-file-input-port filename)
                       (get-disassembler (string->symbol arch))
-                      color #f 0 '()))))
+                      color #f #x100 '()))))
 
 (define (parse-args args)
   (define (help . msg)

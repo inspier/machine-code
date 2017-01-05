@@ -1,6 +1,6 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Copyright © 2008, 2009, 2010, 2012, 2013, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2012, 2013, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -35,7 +35,8 @@
                 (lambda (_ . bytes)
                   (set! bytes-returned
                         (+ (length bytes)
-                           bytes-returned))))))
+                           bytes-returned)))
+                #f)))
         (cond ((eof-object? i)
                (unless (port-eof? port)
                  (error 'test "After disassembly there are bytes unread."
@@ -787,7 +788,8 @@
              (get-instruction port
                               mode
                               (lambda (tag . bytes)
-                                (set! read (+ read (length bytes))))))))
+                                (set! read (+ read (length bytes))))
+                              #f))))
       (let* ((bv (get-bytevector-all port))
              (unread (if (eof-object? bv) 0 (bytevector-length bv))))
         (cond ((not (= (bytevector-length input) (+ read unread)))

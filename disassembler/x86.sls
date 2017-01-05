@@ -1,6 +1,6 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
 ;; Disassembler for the Intel x86-16/32/64 instruction set.
-;; Copyright © 2008, 2009, 2010, 2012, 2013, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2012, 2013, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -410,6 +410,27 @@ operand is an opcode extension."
       (else
        instruction)))
 
+  (define (fix-rIP-relative instruction ip limiter)
+    ;; Fixes the vectors created by rIP-relative. The rIP-relative
+    ;; operands in x86 add an offset to the address where the
+    ;; instruction ended, so the instruction length (managed by
+    ;; limiter) is needed.
+    `(,(car instruction)
+      ,@(map (lambda (operand)
+               (if (vector? operand)
+                   (+ ip (limiter) (vector-ref operand 0))
+                   operand))
+             (cdr instruction))))
+
+  (define (rIP-relative ip mode offset)
+    (if ip
+        (vector offset)                 ;this is later fixed up
+        `(+ ,(case mode
+               ((16) 'ip)
+               ((32) 'eip)
+               ((64) 'rip))
+            ,offset)))
+
 ;;; Instruction stream decoding
   (define (get-displacement port mode collect limiter prefixes modr/m address-size)
     "Reads a SIB and a memory offset, if present. Returns a memory
@@ -421,9 +442,6 @@ translate-displacement."
         (case mod
           ((#b00) (cond
                     ((fx=? (fxand register #b111) #b101)
-                     ;; FIXME: sign-extend these instead of giving
-                     ;; them as negative numbers? At least if they are
-                     ;; large enough...
                      (if (or (not (eqv? mode 64)) sib?)
                          (list (get-s32/collect port collect limiter (tag disp)))
                          (list (if (fx=? address-size 64) 'rip 'eip)
@@ -534,24 +552,16 @@ translate-displacement."
                      ((enum-set-member? (prefix ss) prefixes) 'ss)
                      (else default))))))
 
-  (define (get-operand port mode collect limiter op prefixes opcode vex.v
+  (define (get-operand port mode collect ip limiter op prefixes opcode vex.v
                        operand-size address-size modr/m
                        disp /is4)
     (let get-operand ((op op))
       (case op
-        ((Jb) (list '+ (case mode
-                         ((16) 'ip)
-                         ((32) 'eip)
-                         ((64) 'rip))
-                    (get-s8/collect port collect limiter (tag disp))))
+        ((Jb) (rIP-relative ip mode (get-s8/collect port collect limiter (tag disp))))
         ((Jz)
-         (let ((rip (case mode
-                      ((16) 'ip)
-                      ((32) 'eip)
-                      ((64) 'rip))))
-           (case operand-size
-             ((16) (list '+ rip (get-s16/collect port collect limiter (tag disp))))
-             ((32 64) (list '+ rip (get-s32/collect port collect limiter (tag disp)))))))
+         (case operand-size
+           ((16) (rIP-relative ip mode (get-s16/collect port collect limiter (tag disp))))
+           ((32 64) (rIP-relative ip mode (get-s32/collect port collect limiter (tag disp))))))
 
         ((Md/q)                         ;FIXME: verify
          (translate-displacement prefixes mode disp
@@ -913,7 +923,7 @@ translate-displacement."
         (else
          (error 'get-operand "Unimplemented opsyntax" op)))))
 
-  (define (get-operands port mode collect limiter prefixes instr modr/m opcode vex.v d64)
+  (define (get-operands port mode collect ip limiter prefixes instr modr/m opcode vex.v d64)
     (let* ((operand-size (case mode
                            ((64) (cond ((enum-set-member? (prefix rex.w) prefixes) 64)
                                        ((enum-set-member? (prefix operand) prefixes) 16)
@@ -950,7 +960,7 @@ translate-displacement."
                       (let lp ((op* (cdr instr)))
                         (if (null? op*)
                             '()
-                            (cons (get-operand port mode collect limiter (car op*) prefixes
+                            (cons (get-operand port mode collect ip limiter (car op*) prefixes
                                                opcode vex.v
                                                operand-size address-size modr/m
                                                disp /is4)
@@ -959,10 +969,11 @@ translate-displacement."
              (x (fix-pseudo-ops x))
              (x (fix-lock x prefixes))
              (x (fix-branches x prefixes))
-             (x (fix-rep x prefixes)))
+             (x (fix-rep x prefixes))
+             (x (fix-rIP-relative x ip limiter)))
         x)))
 
-  (define (get-instruction* port mode collect limiter)
+  (define (get-instruction* port mode collect ip limiter)
     (let more-opcode ((opcode-table opcodes)
                       (vex.v #f)
                       (prefixes (prefix-set)))
@@ -1029,7 +1040,7 @@ translate-displacement."
              (when (and (enum-set-member? (prefix vex) prefixes)
                         (not vex-traversed))
                (raise-UD "VEX was used but a legacy instruction was found"))
-             (get-operands port mode collect limiter prefixes instr modr/m opcode vex.v d64))
+             (get-operands port mode collect ip limiter prefixes instr modr/m opcode vex.v d64))
 
             ;; Traverse the instruction table
 
@@ -1181,30 +1192,44 @@ translate-displacement."
   ;; a function which accepts any number of arguments: the first
   ;; argument is a type tag, and the following arguments are bytes.
   ;; All bytes read from the port will be passed to the collector.
-  (define (get-instruction port mode collect)
+  (define (get-instruction port mode collect ip)
     (let ((collect (or collect (lambda x #f))))
       (let ((limiter
              (let ((have-read 0))
                ;; The limiter works to stop get-instruction
                ;; from reading more than 15 bytes.
-               (lambda (wanted-bytes collect tag)
-                 (when (> (+ have-read wanted-bytes) 15)
-                   (let* ((n (- 15 have-read))
-                          (bv (get-bytevector-n port n)))
-                     (unless (or (eof-object? bv) (zero? n))
-                       (apply collect tag (bytevector->u8-list bv)))
-                     (when (or (eof-object? bv) (< (bytevector-length bv) n))
-                       (raise-UD "End of file inside oversized instruction"))
-                     (raise-UD "Instruction too long")))
-                 (set! have-read (+ have-read wanted-bytes))))))
+               (case-lambda
+                 (()
+                  have-read)
+                 ((wanted-bytes collect tag)
+                  (when (> (+ have-read wanted-bytes) 15)
+                    (let* ((n (- 15 have-read))
+                           (bv (get-bytevector-n port n)))
+                      (unless (or (eof-object? bv) (zero? n))
+                        (apply collect tag (bytevector->u8-list bv)))
+                      (when (or (eof-object? bv) (< (bytevector-length bv) n))
+                        (raise-UD "End of file inside oversized instruction"))
+                      (raise-UD "Instruction too long")))
+                  (set! have-read (+ have-read wanted-bytes)))))))
         (if (eof-object? (lookahead-u8 port))
             (eof-object)
-            (get-instruction* port mode collect limiter)))))
+            (get-instruction* port mode collect ip limiter)))))
 
+  ;; Generic disassembler support.
   (let ((min 1) (max 15))
+    (define (wrap-get-instruction mode)
+      (define get-instruction*
+        (case-lambda
+          ((port)
+           (get-instruction port mode #f #f))
+          ((port collect)
+           (get-instruction port mode collect #f))
+          ((port collect pc)
+           (get-instruction port mode collect pc))))
+      get-instruction*)
     (register-disassembler
-     (make-disassembler 'x86-16 min max (lambda (p c) (get-instruction p 16 c))))
+     (make-disassembler 'x86-16 min max (wrap-get-instruction 16)))
     (register-disassembler
-     (make-disassembler 'x86-32 min max (lambda (p c) (get-instruction p 32 c))))
+     (make-disassembler 'x86-32 min max (wrap-get-instruction 32)))
     (register-disassembler
-     (make-disassembler 'x86-64 min max (lambda (p c) (get-instruction p 64 c))))))
+     (make-disassembler 'x86-64 min max (wrap-get-instruction 64)))))

@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2009, 2010, 2012, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2009, 2010, 2012, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -238,7 +238,7 @@
                  (list (if (fxbit-set? xb 4) 'post- 'pre-) (- 9 disp) reg)
                  (list (if (fxbit-set? xb 4) 'post+ 'pre+) disp reg))))))
 
-  (define (get-instruction port collect)
+  (define (get-instruction port collect pc)
     (define (get-operand am)
       (case am
         ((rel8)
@@ -338,7 +338,17 @@
             (else
              (get-operands opcodes (get-u8/collect port collect 'opcode))))))
 
-  (let ((min 1)
-        (max 5))
+  ;; Generic disassembler support.
+  (let ((min 1) (max 5))
+    (define (wrap-get-instruction)
+      (define get-instruction*
+        (case-lambda
+          ((port)
+           (get-instruction port #f #f))
+          ((port collect)
+           (get-instruction port collect #f))
+          ((port collect pc)
+           (get-instruction port collect pc))))
+      get-instruction*)
     (register-disassembler
-     (make-disassembler 'm68hc12 min max get-instruction))))
+     (make-disassembler 'm68hc12 min max (wrap-get-instruction)))))
