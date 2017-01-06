@@ -65,6 +65,7 @@
 (check (d #x90000141) => '(adrp x1 #x2c000))
 (check (d #x10000061) => '(adr x1 #x410c))
 (check (d #xb4000060) => '(cbz x0 #x410c))
+(check (d #x1a9f17e2) => '(cset w2 eq))
 
 (check-report)
-(exit (if (check-passed? 24) 0 1))
+(exit (if (check-passed? 25) 0 1))

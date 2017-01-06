@@ -180,6 +180,12 @@
   (define (decode-reg-extend option)
     (vector-ref '#(uxtb uxth uxtw uxtx sxtb sxth sxtw sxtx) option))
 
+  (define (condition-code cond*)
+    (vector-ref condition-codes cond*))
+
+  (define (inverted-condition-code cond*)
+    (vector-ref condition-codes (fxxor cond* #b0001)))
+
 ;;; Decode tables
 
   (define-encoding (main pc instr (31) (28 op0) (24))
@@ -192,9 +198,9 @@
             data-processing/simd&fp))
 
   (define-encoding (unallocated pc instr (31) (28 (= #b00)) (26))
-    (decode
-     [(and (= instr 0))
-      `(%u32 ,instr)]))                 ;it's probably padding
+    (match (instr)
+      [(0)
+       `(%u32 ,instr)]))                ;it's probably padding
 
 ;;; C4.2
 
@@ -213,60 +219,61 @@
       ((#b01) (fxarithmetic-shift-left imm12 12))
       (else (raise-UD "Reserved shift value"))))
 
-  ;; C4.2.1 TODO: There are aliases
+  ;; C4.2.1
   (define-encoding (add/subtract pc instr (31 sf) (30 op) (29 S) (28 (= #b10001)) (23 shift) (21 imm12) (9 Rn) (4 Rd))
-    (decode
-     [(and (= sf #b0) (= op #b0) (= S #b0)) `(add ,(W/WSP Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b0) (= op #b0) (= S #b1)) `(adds ,(W Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b0) (= op #b1) (= S #b0)) `(sub ,(W/WSP Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b0) (= op #b1) (= S #b1)) `(subs ,(W Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b1) (= op #b0) (= S #b0)) `(add ,(X/SP Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b1) (= op #b0) (= S #b1)) `(adds ,(X/SP Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b1) (= op #b1) (= S #b0)) `(sub ,(X/SP Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]
-     [(and (= sf #b1) (= op #b1) (= S #b1)) `(subs ,(X Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]))
+    ;; TODO: There are aliases
+    (match (sf op S)
+      [(0 0 0) `(add ,(W/WSP Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
+      [(0 0 1) `(adds ,(W Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
+      [(0 1 0) `(sub ,(W/WSP Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
+      [(0 1 1) `(subs ,(W Rd) ,(W/WSP Rn) ,(page-immediate imm12 shift))]
+      [(1 0 0) `(add ,(X/SP Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]
+      [(1 0 1) `(adds ,(X/SP Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]
+      [(1 1 0) `(sub ,(X/SP Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]
+      [(1 1 1) `(subs ,(X Rd) ,(X/SP Rn) ,(page-immediate imm12 shift))]))
 
   ;; C4.2.2
   (define-encoding (bitfield pc instr (31 sf) (30 opc) (28 (= #b100110)) (22 N) (21 immr) (15 imms) (9 Rn) (4 Rd))
-    )
+    (match (sf opc N)))
 
   ;; C4.2.3
   (define-encoding (extract pc instr (31 sf) (30 op21) (28 (= #b100111)) (22 N) (21 o0) (20 Rm) (15 imms) (9 Rn) (4 Rd))
-    )
+    (match (sf op21 N o0 imms)))
 
   ;; C4.2.4
   (define-encoding (logical/imm pc instr (31 sf) (30 opc) (28 (= #b100100)) (22 N) (21 immr) (15 imms) (9 Rn) (4 Rd))
-    (decode
-     [(and (= sf #b0) (= opc #b11) (= N #b0))
-      (let-values (((imm _) (decode-bit-masks 32 N imms immr #t)))
-        (if (= Rd #b11111)
-            `(tst ,(W Rn) ,imm)
-            `(ands ,(W Rd) ,(W Rn) ,imm)))]
-     [(and (= sf #b1) (= opc #b11))
-      (let-values (((imm _) (decode-bit-masks 64 N imms immr #t)))
-        (if (= Rd #b11111)
-            `(tst ,(X Rn) ,imm)
-            `(ands ,(X Rd) ,(W Rn) ,imm)))]))
+    (match (sf opc N)
+      [(0 #b11 0)
+       (let-values (((imm _) (decode-bit-masks 32 N imms immr #t)))
+         (if (= Rd #b11111)
+             `(tst ,(W Rn) ,imm)
+             `(ands ,(W Rd) ,(W Rn) ,imm)))]
+      [(1 #b11 'bx)
+       (let-values (((imm _) (decode-bit-masks 64 N imms immr #t)))
+         (if (= Rd #b11111)
+             `(tst ,(X Rn) ,imm)
+             `(ands ,(X Rd) ,(W Rn) ,imm)))]))
 
   ;; C4.2.5
   (define-encoding (move-wide/imm pc instr (31 sf) (30 opc) (28 (= #b100101)) (22 hw) (20 imm16) (4 Rd))
     ;; TODO: aliases
-    (decode
-     [(and (= sf #b0) (= opc #b00)) `(movn ,(W/WSP Rd) ,(lsl imm16 (* hw 16)))]
-     [(and (= sf #b0) (= opc #b10)) `(movz ,(W/WSP Rd) ,(lsl imm16 (* hw 16)))]
-     [(and (= sf #b0) (= opc #b11)) `(movk ,(W/WSP Rd) ,(lsl imm16 (* hw 16)))]
+    (match (sf opc)
+      [(0 #b00) `(movn ,(W/WSP Rd) ,(lsl imm16 (* hw 16)))]
+      [(0 #b10) `(movz ,(W/WSP Rd) ,(lsl imm16 (* hw 16)))]
+      [(0 #b11) `(movk ,(W/WSP Rd) ,(lsl imm16 (* hw 16)))]
 
-     [(and (= sf #b1) (= opc #b00)) `(movn ,(X/SP Rd) ,(lsl imm16 (* hw 16)))]
-     [(and (= sf #b1) (= opc #b10)) `(movz ,(X/SP Rd) ,(lsl imm16 (* hw 16)))]
-     [(and (= sf #b1) (= opc #b11)) `(movk ,(X/SP Rd) ,(lsl imm16 (* hw 16)))]))
+      [(1 #b00) `(movn ,(X/SP Rd) ,(lsl imm16 (* hw 16)))]
+      [(1 #b10) `(movz ,(X/SP Rd) ,(lsl imm16 (* hw 16)))]
+      [(1 #b11) `(movk ,(X/SP Rd) ,(lsl imm16 (* hw 16)))]))
 
   ;; C4.2.6
   (define-encoding (pc-rel-addr pc instr (31 op) (30 immlo) (28 (= #b10000)) (23 immhi) (4 Rd))
-    (decode
-     [(= op #b0)
+    (match (op)
+      [(0)
       `(adr ,(X Rd) ,(pc-rel pc (fxior (fxarithmetic-shift-left immhi 2) immlo)))]
-     [(= op #b1)
-      `(adrp ,(X Rd)
-             ,(pc-rel-page pc (bitwise-arithmetic-shift-left (fxior (fxarithmetic-shift-left immhi 2) immlo) 12)))]))
+      [(1)
+       `(adrp ,(X Rd)
+              ,(pc-rel-page pc (bitwise-arithmetic-shift-left (fxior (fxarithmetic-shift-left immhi 2) immlo) 12)))]))
 
 ;;; C4.3
 
@@ -282,55 +289,52 @@
 
   ;; C4.3.1
   (define-encoding (compare&branch/imm pc instr (31 sf) (30 (= #b011010)) (24 op) (23 imm19) (4 Rt))
-    (decode
-     [(and (= sf #b0) (= op #b0)) `(cbz ,(W Rt) ,(pc-rel pc (* imm19 4)))]
-     [(and (= sf #b0) (= op #b1)) `(cbnz ,(W Rt) ,(pc-rel pc (* imm19 4)))]
-     [(and (= sf #b1) (= op #b0)) `(cbz ,(X Rt) ,(pc-rel pc (* imm19 4)))]
-     [(and (= sf #b1) (= op #b1)) `(cbnz ,(X Rt) ,(pc-rel pc (* imm19 4)))]))
+    (match (sf op)
+      [(0 0) `(cbz ,(W Rt) ,(pc-rel pc (* imm19 4)))]
+      [(0 1) `(cbnz ,(W Rt) ,(pc-rel pc (* imm19 4)))]
+      [(1 0) `(cbz ,(X Rt) ,(pc-rel pc (* imm19 4)))]
+      [(1 1) `(cbnz ,(X Rt) ,(pc-rel pc (* imm19 4)))]))
 
   ;; C4.3.2
   (define-encoding (cond-branch/imm pc instr (31 (= #b0101010)) (24 o1) (23 imm19) (4 o0) (3 cond*))
-    (decode
-     [(and (= o1 #b0) (= o0 #b0))
+    (match (o1 o0)
+      [(0 0)
       `(,(string->symbol (string-append "b." (symbol->string (vector-ref condition-codes cond*))))
         ,(pc-rel pc (bitwise-arithmetic-shift-left (sign-extend imm19 19) 2)))]))
 
   ;; C4.3.3
   (define-encoding (exception pc instr (31 (= #b11010100)) (23 opc) (20 imm16) (4 op2) (1 LL))
-    )
+    (match (opc op2 LL)))
 
   ;; C4.3.4
   (define-encoding (system pc instr (31 (= #b1101010100)) (21 L) (20 op0) (18 op1) (15 CRn) (11 CRm) (7 op2) (4 Rt))
-    (decode
-     [(and (= L #b0) (= op0 #b00) (= op1 #b011) (= CRn #b0010) (= CRm #b0000)
-           (= op2 #b000) (= Rt #b11111))
-      '(nop)]))
+    (match (L op0 op1 CRn CRm op2 Rt)
+      [(0 #b00 #b011 #b0010 #b0000 #b000 #b11111)
+       '(nop)]))
 
   ;; C4.3.5
   (define-encoding (test&branch/imm pc instr (31 b5) (30 (= #b011011)) (24 op) (23 b40) (18 imm14) (4 Rt))
-    (decode
-     [(= op #b0)
-      (let ((R (if (eqv? b5 #b1) X W)))
-        `(tbz ,(R Rt) ,(fxior (fxarithmetic-shift-left b5 6) b40) (pc-rel pc ,(fxarithmetic-shift-left imm14 2))))]
-     [(= op #b1)
-      (let ((R (if (eqv? b5 #b1) X W)))
-        `(tbnz ,(R Rt) ,(fxior (fxarithmetic-shift-left b5 6) b40) (pc-rel pc ,(fxarithmetic-shift-left imm14 2))))]))
+    (match (op)
+      [(0)
+       (let ((R (if (eqv? b5 #b1) X W)))
+         `(tbz ,(R Rt) ,(fxior (fxarithmetic-shift-left b5 6) b40) (pc-rel pc ,(fxarithmetic-shift-left imm14 2))))]
+      [(1)
+       (let ((R (if (eqv? b5 #b1) X W)))
+         `(tbnz ,(R Rt) ,(fxior (fxarithmetic-shift-left b5 6) b40) (pc-rel pc ,(fxarithmetic-shift-left imm14 2))))]))
 
   ;; C4.3.6
   (define-encoding (uncond-branch/imm pc instr (31 op) (30 (= #b00101)) (25 imm26))
-    (decode
-     [(= op #b0)
-      `(b ,(pc-rel pc (fx* (sign-extend imm26 26) 4)))]
-     [(= op #b1)
-      `(bl ,(pc-rel pc (fx* (sign-extend imm26 26) 4)))]))
+    (match (op)
+      [(0) `(b ,(pc-rel pc (fx* (sign-extend imm26 26) 4)))]
+      [(1) `(bl ,(pc-rel pc (fx* (sign-extend imm26 26) 4)))]))
 
   ;; C4.3.7
   (define-encoding (uncond-branch/reg pc instr (31 (= #b1101011)) (24 opc) (20 op2) (15 op3) (9 Rn) (4 op4))
-    (decode
-     [(and (= opc #b0010) (= op2 #b11111) (= op3 #b000000) (= op4 #b00000))
-      (if (eqv? Rn 30)
-          '(ret)
-          `(ret ,(X Rn)))]))
+    (match (opc op2 op3 op4)
+      [(#b0010 #b11111 #b000000 #b00000)
+       (if (eqv? Rn 30)
+           '(ret)
+           `(ret ,(X Rn)))]))
 
 ;;; C4.4
 
@@ -356,97 +360,107 @@
 
   ;; C4.4.1
   (define-encoding (load/store-adv-simd-multi pc instr (31 (= #b0)) (30 Q) (29 (= #b0011000)) (22 L)
-                                              (21 (= #b000000)) (15 opcode) (11 size) (9 Rn) (4 Rt)))
+                                              (21 (= #b000000)) (15 opcode) (11 size) (9 Rn) (4 Rt))
+    (match (L opcode)))
 
   ;; C4.4.2
   (define-encoding (load/store-adv-simd-multi-postidx pc instr (31 (= #b0)) (30 Q) (29 (= #b0011001)) (22 L)
-                                                      (21 (= #b0)) (20 Rm) (15 opcode) (11 size) (9 Rn) (4 Rt)))
+                                                      (21 (= #b0)) (20 Rm) (15 opcode) (11 size) (9 Rn) (4 Rt))
+    (match (L Rm opcode)))
 
   ;; C4.4.3
   (define-encoding (load/store-adv-simd-single pc instr (31 (= #b0)) (30 Q) (29 (= #b0011010)) (22 L) (21 R)
-                                               (20 (= #b00000)) (15 opcode) (12 S) (11 size) (9 Rn) (4 Rt)))
+                                               (20 (= #b00000)) (15 opcode) (12 S) (11 size) (9 Rn) (4 Rt))
+    (match (L R opcode S size)))
 
   ;; C4.4.4
   (define-encoding (load-store/adv-simd-single-postidx pc instr (31 (= #b0)) (30 Q) (29 (= #b0011011)) (22 L) (21 R)
-                                                       (20 Rm) (15 opcode) (12 S) (11 size) (9 Rn) (4 Rt)))
+                                                       (20 Rm) (15 opcode) (12 S) (11 size) (9 Rn) (4 Rt))
+    (match (L R Rm opcode S size)))
 
   ;; C4.4.5
-  (define-encoding (load-register-literal pc instr (31 opc) (29 (= #b011)) (26 V) (25 (= #b00)) (23 imm19) (4 Rt)))
+  (define-encoding (load-register-literal pc instr (31 opc) (29 (= #b011)) (26 V) (25 (= #b00)) (23 imm19) (4 Rt))
+    (match (opc V)))
 
   ;; C4.4.6
   (define-encoding (load/store-exclusive pc instr (31 size) (29 (= #b001000)) (23 o2) (22 L) (21 o1) (20 Rs) (15 o0)
-                                         (14 Rt2) (9 Rn) (4 Rt)))
+                                         (14 Rt2) (9 Rn) (4 Rt))
+    (match (size o2 L o1 o0)))
 
   ;; C4.4.7
   (define-encoding (load/store-no-alloc-pair/offset pc instr (31 opc) (29 (= #b101)) (26 V) (25 (= #b000)) (22 L)
-                                                    (21 imm7) (14 Rt2) (9 Rn) (4 Rt)))
+                                                    (21 imm7) (14 Rt2) (9 Rn) (4 Rt))
+    (match (opc V L)))
 
   ;; C4.4.8
   (define-encoding (load/store-reg/imm-postidx pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (22 opc)
-                                               (21 (= #b0)) (20 imm9) (11 (= #b01)) (9 Rn) (4 Rt)))
+                                               (21 (= #b0)) (20 imm9) (11 (= #b01)) (9 Rn) (4 Rt))
+    (match (size V opc)))
 
   ;; C4.4.9
   (define-encoding (load/store-reg/imm-preidx pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
-                                              (21 (= #b0)) (20 imm9) (11 (= #b11)) (9 Rn) (4 Rt)))
+                                              (21 (= #b0)) (20 imm9) (11 (= #b11)) (9 Rn) (4 Rt))
+    (match (size V opc)))
 
   ;; C4.4.10
   (define-encoding (load/store-reg/reg-offset pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
                                               (21 (= #b1)) (20 Rm) (15 option) (12 S) (11 (= #b10)) (9 Rn) (4 Rt))
-    (decode
-     [(and (= size #b10) (= V #b0) (= opc #b01))
-      (if (not (eqv? (fxand option #b010) #b010))
-          (raise-UD "Unallocated in load/store-reg/reg-offset" (list 'option option))
-          (let ((R ((if (fxbit-set? option 0) X W) Rm)))
-            `(ldr ,(X Rt)
-                  ,@(mem+ (X/SP Rn)
-                          (case option
-                            ((#b011) (lsl R (fx* size S)))
-                            (else `(,(decode-reg-extend option) ,R ,(fx* size S))))))))]))
+    (match (size V opc option)
+      [(#b10 0 #b01 'bxxx)
+       (if (not (eqv? (fxand option #b010) #b010))
+           (raise-UD "Unallocated in load/store-reg/reg-offset" (list 'option option))
+           (let ((R ((if (fxbit-set? option 0) X W) Rm)))
+             `(ldr ,(X Rt)
+                   ,@(mem+ (X/SP Rn)
+                           (case option
+                             ((#b011) (lsl R (fx* size S)))
+                             (else `(,(decode-reg-extend option) ,R ,(fx* size S))))))))]))
 
   ;; C4.4.11
   (define-encoding (load/store-reg/unprivileged pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
-                                                (21 (= #b0)) (20 imm9) (11 (= #b10)) (9 Rn) (4 Rt)))
+                                                (21 (= #b0)) (20 imm9) (11 (= #b10)) (9 Rn) (4 Rt))
+    (match (size V opc)))
 
   ;; C4.4.12
   (define-encoding (load/store-reg/unscaled-imm pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
                                                 (21 (= #b0)) (20 imm9) (11 (= #b00)) (9 Rn) (4 Rt))
-    (decode
-     [(and (= size #b10) (= V #b0) (= opc #b00))
-      `(stur ,(W Rt) ,@(mem+ (X/SP Rn) (sign-extend imm9 9)))]))
+    (match (size V opc)
+      [(#b10 0 #b00)
+       `(stur ,(W Rt) ,@(mem+ (X/SP Rn) (sign-extend imm9 9)))]))
 
   ;; C4.4.13
   (define-encoding (load/store-reg/unsigned-imm pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b01)) (23 opc)
                                                 (21 imm12) (9 Rn) (4 Rt))
-    (decode
-     [(and (= size #b00) (= V #b0) (= opc #b00)) `(strb ,(W Rt) ,@(mem+ (X/SP Rn) imm12))]
+    (match (size V opc)
+      [(#b00 0 #b00) `(strb ,(W Rt) ,@(mem+ (X/SP Rn) imm12))]
 
-     [(and (= size #b10) (= V #b0) (= opc #b00)) `(str ,(W Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]
-     [(and (= size #b10) (= V #b0) (= opc #b01)) `(ldr ,(W Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]
-     [(and (= size #b11) (= V #b0) (= opc #b00)) `(str ,(X Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]
-     [(and (= size #b11) (= V #b0) (= opc #b01)) `(ldr ,(X Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]))
+      [(#b10 0 #b00) `(str ,(W Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]
+      [(#b10 0 #b01) `(ldr ,(W Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]
+      [(#b11 0 #b00) `(str ,(X Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]
+      [(#b11 0 #b01) `(ldr ,(X Rt) ,@(mem+ (X/SP Rn) (lsl imm12 size)))]))
 
   ;; C4.4.14
   (define-encoding (load/store-regpair/offset pc instr (31 opc) (29 (= #b101)) (26 V) (25 (= #b010)) (22 L) (21 imm7)
                                               (14 Rt2) (9 Rn) (4 Rt))
-    (decode
-     [(and (= opc #b10) (= V 0) (= L 0))
+    (match (opc V L)
+      [(#b10 0 0)
       `(stp ,(X Rt) ,(X Rt2) ,@(mem+ (X/SP Rn) (fx* (sign-extend imm7 7) 8)))]
-     [(and (= opc #b10) (= V 0) (= L 1))
+      [(#b10 0 1)
       `(ldp ,(X Rt) ,(X Rt2) ,@(mem+ (X/SP Rn) (fx* (sign-extend imm7 7) 8)))]))
 
   ;; C4.4.15
   (define-encoding (load/store-regpair/postidx pc instr (31 opc) (29 (= #b101)) (26 V) (25 (= #b001)) (22 L) (21 imm7)
                                                (14 Rt2) (9 Rn) (4 Rt))
-    (decode
-     [(and (= opc #b10) (= V 0) (= L 1))
-      `(ldp ,(X Rt) ,(X Rt2) ,@(mempost+ (X/SP Rn) (fx* (sign-extend imm7 7) 8)))]))
+    (match (opc V L)
+      [(#b10 0 1)
+       `(ldp ,(X Rt) ,(X Rt2) ,@(mempost+ (X/SP Rn) (fx* (sign-extend imm7 7) 8)))]))
 
   ;; C4.4.16
   (define-encoding (load/store-regpair/preidx pc instr (31 opc) (29 (= #b101)) (26 V) (25 (= #b011)) (22 L) (21 imm7)
                                               (14 Rt2) (9 Rn) (4 Rt))
-    (decode
-     [(and (= opc #b10) (= V 0) (= L 0))
-      `(stp ,(X Rt) ,(X Rt2) ,@(mempre+ (X/SP Rn) (fx* (sign-extend imm7 7) 8)))]))
+    (match (opc V L)
+      [(#b10 0 0)
+       `(stp ,(X Rt) ,(X Rt2) ,@(mempre+ (X/SP Rn) (fx* (sign-extend imm7 7) 8)))]))
 
 ;;; C4.5
 
@@ -465,64 +479,85 @@
 
   ;; C4.5.1
   (define-encoding (add/sub-ext-reg pc instr (31 sf) (30 op) (28 (= #b01011)) (23 opt) (21 (= #b1)) (20 Rm) (15 option)
-                                    (12 imm3) (9 Rn) (4 Rd)))
+                                    (12 imm3) (9 Rn) (4 Rd))
+    (match (sf op S opt imm3)))
 
   ;; C4.5.2
   (define-encoding (add/sub-shift-reg pc instr (31 sf) (30 op) (29 S) (28 (= #b01011)) (23 shift) (21 (= #b0))
                                       (20 Rm) (15 imm6) (9 Rn) (4 Rd))
     ;; TODO: aliases
-    (decode
-     [(and (= sf #b0) (= op #b1) (= S #b1))
-      `(subs ,(W Rd) ,(W Rn) ,(decode-shift/no-ror shift (W Rm) imm6))]
-     [(and (= sf #b1) (= op #b1) (= S #b1))
-      `(subs ,(X Rd) ,(X Rn) ,(decode-shift/no-ror shift (X Rm) imm6))]))
+    (match (sf op S)
+      [(#b0 #b1 #b1) `(subs ,(W Rd) ,(W Rn) ,(decode-shift/no-ror shift (W Rm) imm6))]
+      [(#b1 #b1 #b1) `(subs ,(X Rd) ,(X Rn) ,(decode-shift/no-ror shift (X Rm) imm6))]))
 
   ;; C4.5.3
   (define-encoding (add/sub-with-carry pc instr (31 sf) (30 op) (29 S) (28 (= #b11010000)) (20 Rm)
-                                       (15 opcode2) (9 Rn) (4 Rd)))
+                                       (15 opcode2) (9 Rn) (4 Rd))
+    (match (sf op S opcode2)))
 
   ;; C4.5.4
   (define-encoding (cond-compare/imm pc instr (31 sf) (30 op) (28 (= #b11010010)) (20 imm5) (15 cond*) (11 (= #b1))
-                                     (10 o2) (9 Rn) (4 o3) (3 nzcv)))
+                                     (10 o2) (9 Rn) (4 o3) (3 nzcv))
+    (match (sf op S o2 o3)))
 
   ;; C4.5.5
   (define-encoding (cond-compare/reg pc instr (31 sf) (30 op) (29 S) (28 (= #b11010010)) (20 Rm) (15 cond*) (11 (= #b0))
-                                     (10 o2) (9 Rn) (4 o3) (3 nzcv)))
+                                     (10 o2) (9 Rn) (4 o3) (3 nzcv))
+    (match (sf op S o2 o3)))
 
   ;; C4.5.6
   (define-encoding (conditional-select pc instr (31 sf) (30 op) (29 S) (28 (= #b11010100)) (20 Rm) (15 cond*) (11 op2)
-                                       (9 Rn) (4 Rd)))
+                                       (9 Rn) (4 Rd))
+    (match (sf op S op2)
+      [(0 0 0 #b00) `(csel ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))]
+      [(0 0 0 #b01)
+       (cond ((and (!= Rm #b11111) (!&= cond* 'b111x) (!= Rn #b11111) (= Rn Rm))
+              `(cinc ,(W Rd) ,(inverted-condition-code cond*)))
+             ((and (= Rm #b11111) (!&= cond* 'b111x) (= Rn #b11111))
+              `(cset ,(W Rd) ,(inverted-condition-code cond*)))
+             (else
+              `(csinc ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))))]
+      ;; TODO: aliases for these
+      [(0 1 0 #b00) `(csinv ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))]
+      [(0 1 0 #b01) `(csneg ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))]
+      [(1 0 0 #b00) `(csel ,(X Rd) ,(X Rn) ,(X Rm) ,(condition-code cond*))]
+      [(1 0 0 #b01) `(csinc ,(X Rd) ,(X Rn) ,(X Rm) ,(condition-code cond*))]
+      [(1 1 0 #b00) `(csinv ,(X Rd) ,(X Rn) ,(X Rm) ,(condition-code cond*))]
+      [(1 1 0 #b01) `(csneg ,(X Rd) ,(X Rn) ,(X Rm) ,(condition-code cond*))]))
 
   ;; C4.5.7
   (define-encoding (data-processing/1src pc instr (31 sf) (30 (= #b1)) (29 S) (28 (= #b11010110)) (20 opcode2)
-                                         (15 opcode) (9 Rn) (4 Rd)))
+                                         (15 opcode) (9 Rn) (4 Rd))
+    (match (sf S opcode2 opcode)))
 
   ;; C4.5.8
   (define-encoding (data-processing/2src pc instr (31 sf) (30 (= #b0)) (29 S) (28 (= #b11010110)) (20 Rm)
-                                         (15 opcode) (9 Rn) (4 Rd)))
+                                         (15 opcode) (9 Rn) (4 Rd))
+    (match (sf S opcode)))
 
   ;; C4.5.9
   (define-encoding (data-processing/3src pc instr (31 sf) (30 op54) (28 (= #b11011)) (23 op31) (20 Rm) (15 o0)
-                                         (14 Ra) (9 Rn) (4 Rd)))
+                                         (14 Ra) (9 Rn) (4 Rd))
+    (match (sf op54 op31 o0)))
 
   ;; C4.5.10
   (define-encoding (logical/shifted-reg pc instr (31 sf) (30 opc) (28 (= #b01010)) (23 shift) (21 N) (20 Rm)
                                         (15 imm6) (9 Rn) (4 Rd))
-    (decode
-     [(and (= sf 0) (= opc #b01) (= N 0))
-      (cond ((and (= shift #b00) (= imm6 #b000000) (= Rn #b11111))
-             `(mov ,(W Rd) ,(W Rm)))
-            (else
-             `(orr ,(W Rd) ,(W Rn) ,(decode-shift shift (W Rm) imm6))))]
-     [(and (= sf 1) (= opc #b01) (= N 0))
-      (cond ((and (= shift #b00) (= imm6 #b000000) (= Rn #b11111))
-             `(mov ,(X Rd) ,(X Rm)))
-            (else
-             `(orr ,(X Rd) ,(X Rn) ,(decode-shift shift (X Rm) imm6))))]
+    (match (sf opc N)
+      [(0 #b01 0)
+       (cond ((and (= shift #b00) (= imm6 #b000000) (= Rn #b11111))
+              `(mov ,(W Rd) ,(W Rm)))
+             (else
+              `(orr ,(W Rd) ,(W Rn) ,(decode-shift shift (W Rm) imm6))))]
+      [(1 #b01 0)
+       (cond ((and (= shift #b00) (= imm6 #b000000) (= Rn #b11111))
+              `(mov ,(X Rd) ,(X Rm)))
+             (else
+              `(orr ,(X Rd) ,(X Rn) ,(decode-shift shift (X Rm) imm6))))]
 
-     [(and (= sf 1) (= opc #b10) (= N 0))
-      ;; TODO: shift can check that imm6<5> is valid if it knows the size
-      `(eor ,(X Rd) ,(X Rn) ,(decode-shift shift (X Rm) imm6))]))
+      [(1 #b10 0)
+       ;; TODO: shift can check that imm6<5> is valid if it knows the size
+       `(eor ,(X Rd) ,(X Rn) ,(decode-shift shift (X Rm) imm6))]))
 
 ;;; C4.6
 
@@ -562,87 +597,108 @@
 
   ;; C4.6.1
   (define-encoding (adv-simd-across-lanes pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size)
-                                          (21 (= #b11000)) (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd)))
+                                          (21 (= #b11000)) (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.2
   (define-encoding (adv-simd-copy pc instr (31 (= #b0)) (30 Q) (29 op) (28 (= #b01110000)) (20 imm5) (15 (= #b0))
-                                  (14 imm4) (10 (= #b1)) (9 Rn) (4 Rd)))
+                                  (14 imm4) (10 (= #b1)) (9 Rn) (4 Rd))
+    (match (Q op imm5 imm4)))
 
   ;; C4.6.3
   (define-encoding (adv-simd-extract pc instr (31 (= #b0)) (30 Q) (29 (= #b101110)) (23 op2) (21 (= #b0)) (20 Rm)
-                                     (15 (= #b0)) (14 imm4) (10 (= #b0)) (9 Rn) (4 Rd)))
+                                     (15 (= #b0)) (14 imm4) (10 (= #b0)) (9 Rn) (4 Rd))
+    (match (op2)))
 
   ;; C4.6.4
   (define-encoding (adv-simd-modified-imm pc instr (31 (= #b0)) (30 Q) (29 op) (28 (= #b0111100000)) (18 a) (17 b)
-                                          (16 c) (15 cmode) (11 o2) (10 (= #b1)) (9 d) (8 e) (7 f) (6 g) (5 f) (4 Rd)))
+                                          (16 c) (15 cmode) (11 o2) (10 (= #b1)) (9 d) (8 e) (7 f) (6 g) (5 h) (4 Rd))
+    (match (Q op cmode o2)))
 
   ;; C4.6.5
   (define-encoding (adv-simd-permute pc instr (31 (= #b0)) (30 Q) (29 (= #b001110)) (23 size) (21 (= #b0)) (20 Rm)
-                                     (15 (= #b0)) (14 opcode) (11 (= #b10)) (9 Rn) (4 Rd)))
+                                     (15 (= #b0)) (14 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
+    (match (opcode)))
 
   ;; C4.6.6
   (define-encoding (adv-simd-scalar-copy pc instr (31 (= #b01)) (29 op) (28 (= #b11110000)) (20 imm5) (15 (= #b0))
-                                         (14 imm4) (10 (= #b1)) (9 Rn) (4 Rd)))
+                                         (14 imm4) (10 (= #b1)) (9 Rn) (4 Rd))
+    (match (op imm5 imm4)))
 
   ;; C4.6.7
   (define-encoding (adv-simd-scalar-pairwise pc instr (31 (= #b01)) (29 U) (28 (= #b11110)) (23 size) (21 (= #b11000))
-                                             (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd)))
+                                             (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.8
   (define-encoding (adv-simd-scalar-shift-imm pc instr (31 (= #b01)) (29 U) (28 (= #b111110)) (22 immh) (18 immb)
-                                              (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd)))
+                                              (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd))
+    (match (U immh opcode)))
 
   ;; C4.6.9
   (define-encoding (adv-simd-scalar-3-diff pc instr (31 (= #b01)) (29 U) (28 (= #b11110)) (23 size) (21 (= #b1))
-                                           (20 Rm) (15 opcode) (11 (= #b00)) (9 Rn) (4 Rd)))
+                                           (20 Rm) (15 opcode) (11 (= #b00)) (9 Rn) (4 Rd))
+    (match (U opcode)))
 
   ;; C4.6.10
   (define-encoding (adv-simd-scalar-3-same pc instr (31 (= #b01)) (29 U) (28 (= #b11110)) (23 size) (21 (= #b1))
-                                           (20 Rm) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd)))
+                                           (20 Rm) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.11
   (define-encoding (adv-simd-scalar-2reg-misc pc instr (31 (= #b01)) (29 U) (28 (= #b11110)) (23 size) (21 (= #b10000))
-                                              (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd)))
+                                              (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.12
   (define-encoding (adv-simd-scalar-x-idx-elem pc instr (31 (= #b01)) (29 U) (28 (= #b11111)) (23 size) (21 L) (20 M)
-                                               (19 Rm) (15 opcode) (11 H) (10 (= #b0)) (9 Rn) (4 Rd)))
+                                               (19 Rm) (15 opcode) (11 H) (10 (= #b0)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.13
   (define-encoding (adv-simd-shift-by-imm pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b011110)) (22 (!= #b0000) immh)
-                                          (18 immb) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd)))
+                                          (18 immb) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd))
+    (match (U opcode)))
 
   ;; C4.6.14
   (define-encoding (adv-simd-table-lookup pc instr (31 (= #b0)) (30 Q) (29 (= #b001110)) (23 op2) (21 (= #b0))
-                                          (20 Rm) (15 (= #b0)) (14 len) (12 op) (11 (= #b00)) (9 Rn) (4 Rd)))
+                                          (20 Rm) (15 (= #b0)) (14 len) (12 op) (11 (= #b00)) (9 Rn) (4 Rd))
+    (match (op2 len op)))
 
   ;; C4.6.15
   (define-encoding (adv-simd-3-diff pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size) (21 (= #b1))
-                                    (20 Rm) (15 opcode) (11 (= #b00)) (9 Rn) (4 Rd)))
+                                    (20 Rm) (15 opcode) (11 (= #b00)) (9 Rn) (4 Rd))
+    (match (U opcode)))
 
   ;; C4.6.16
   (define-encoding (adv-simd-3-same pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size) (21 ( = #b1))
-                                    (20 Rm) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd)))
+                                    (20 Rm) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.17
   (define-encoding (adv-simd-2reg-misc pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size) (21 (= #b10000))
-                                       (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd)))
+                                       (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.18
   (define-encoding (adv-simd-vec-x-idx-elem pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01111)) (23 size) (21 L)
-                                            (20 M) (19 Rm) (15 opcode) (11 H) (10 (= #b0)) (9 Rn) (4 Rd)))
+                                            (20 M) (19 Rm) (15 opcode) (11 H) (10 (= #b0)) (9 Rn) (4 Rd))
+    (match (U size opcode)))
 
   ;; C4.6.19
   (define-encoding (crypto-aes pc instr (31 (= #b01001110)) (23 size) (21 (= #b10100)) (16 opcode) (11 (= #b10))
-                               (9 Rn) (4 Rd)))
+                               (9 Rn) (4 Rd))
+    (match (size opcode)))
 
   ;; C4.6.20
   (define-encoding (crypto-3-reg-sha pc instr (31 (= #b01011110)) (23 size) (21 (= #b0)) (20 Rm) (15 (= #b0))
-                                     (14 opcode) (11 (= #b00)) (9 Rn) (4 Rd)))
+                                     (14 opcode) (11 (= #b00)) (9 Rn) (4 Rd))
+    (match (size opcode)))
 
   ;; C4.6.21
   (define-encoding (crypto-2-reg-sha pc instr (31 (= #b01011110)) (23 size) (21 (= #b10100)) (16 opcode) (11 (= #b10))
-                                     (9 Rn) (4 Rd)))
+                                     (9 Rn) (4 Rd))
+    (match (size opcode)))
 
   ;; C4.6.22
   (define-encoding (fp-compare pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1)) (20 Rm)
@@ -651,74 +707,71 @@
     (select pc instr
             fcmp
             fcmpe)
-
-    (decode
-     [(and (= M #b0) (= S #b0) (= type #b00) (= op #b00) (= opcode2 #b00000))
-      (fcmp pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b00) (= op #b00) (= opcode2 #b01000))
-      (fcmp pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b00) (= op #b00) (= opcode2 #b10000))
-      (fcmpe pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b00) (= op #b00) (= opcode2 #b11000))
-      (fcmpe pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b01) (= op #b00) (= opcode2 #b00000))
-      (fcmp pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b01) (= op #b00) (= opcode2 #b01000))
-      (fcmp pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b01) (= op #b00) (= opcode2 #b10000))
-      (fcmpe pc instr)]
-     [(and (= M #b0) (= S #b0) (= type #b01) (= op #b00) (= opcode2 #b11000))
-      (fcmpe pc instr)]))
+    (match (M S type op opcode2)
+      [(0 0 #b00 #b00 #b00000) (fcmp pc instr)]
+      [(0 0 #b00 #b00 #b01000) (fcmp pc instr)]
+      [(0 0 #b00 #b00 #b10000) (fcmpe pc instr)]
+      [(0 0 #b00 #b00 #b11000) (fcmpe pc instr)]
+      [(0 0 #b01 #b00 #b00000) (fcmp pc instr)]
+      [(0 0 #b01 #b00 #b01000) (fcmp pc instr)]
+      [(0 0 #b01 #b00 #b10000) (fcmpe pc instr)]
+      [(0 0 #b01 #b00 #b11000) (fcmpe pc instr)]))
 
   (define-encoding (fcmp pc instr (31 (= #b00011110)) (23 #;(= 'b0x) type) (21 (= #b1)) (20 Rm) (15 (= #b001000))
                          (9 Rn) (4 #;(= 'b0x) opc) (2 (= #b000)))
-    (decode
-     [(and (= type #b00) (= opc #b00))
-      `(fcmp ,(vector-ref S-registers Rn) ,(vector-ref S-registers Rm))]))
+    (match (type opc Rm)
+      [(#b00 #b00 'bxxxxx) `(fcmp ,(vector-ref S-registers Rn) ,(vector-ref S-registers Rm))]
+      [(#b00 #b01 #b00000) `(fcmp ,(vector-ref S-registers Rn) #i0.0)]
+      [(#b01 #b00 'bxxxxx) `(fcmp ,(vector-ref D-registers Rn) ,(vector-ref D-registers Rm))]
+      [(#b01 #b01 #b00000) `(fcmp ,(vector-ref D-registers Rn) #i0.0)]))
 
   (define-encoding (fcmpe pc instr (31 (= #b00011110)) (23 #;(= 'b0x) type) (21 (= #b1)) (20 Rm) (15 (= #b001000))
                           (9 Rn) (4 #;(= 'b1x) opc) (2 (= #b000)))
-    (decode
-     [(and (= type #b00) (= opc #b10))
-      `(fcmpe ,(vector-ref S-registers Rn) ,(vector-ref S-registers Rm))]
-     [(and (= type #b00) (= Rm #b00000) (= opc #b11))
-      `(fcmpe ,(vector-ref S-registers Rn) #i0.0)]
-     [(and (= type #b01) (= opc #b10))
-      `(fcmpe ,(vector-ref D-registers Rn) ,(vector-ref D-registers Rm))]
-     [(and (= type #b01) (= Rm #b00000) (= opc #b11))
-      `(fcmpe ,(vector-ref D-registers Rn) #i0.0)]))
+    (match (type opc Rm)
+      [(#b00 #b00 'bxxxxx) `(fcmpe ,(vector-ref S-registers Rn) ,(vector-ref S-registers Rm))]
+      [(#b00 #b01 #b00000) `(fcmpe ,(vector-ref S-registers Rn) #i0.0)]
+      [(#b01 #b00 'bxxxxx) `(fcmpe ,(vector-ref D-registers Rn) ,(vector-ref D-registers Rm))]
+      [(#b01 #b01 #b00000) `(fcmpe ,(vector-ref D-registers Rn) #i0.0)]))
 
   ;; C4.6.23
   (define-encoding (fp-cond-compare pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
-                                    (20 Rm) (15 cond*) (11 (= #b01)) (9 Rn) (4 op) (3 nzcv)))
+                                    (20 Rm) (15 cond*) (11 (= #b01)) (9 Rn) (4 op) (3 nzcv))
+    (match (M S type op)))
 
   ;; C4.6.24
   (define-encoding (fp-cond-select pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
-                                   (20 Rm) (15 cond*) (11 (= #b11)) (9 Rn) (4 Rd)))
+                                   (20 Rm) (15 cond*) (11 (= #b11)) (9 Rn) (4 Rd))
+    (match (M S type)))
 
   ;; C4.6.25
   (define-encoding (fp-data-processing-1src pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
-                                            (20 opcode) (14 (= #b10000)) (9 Rn) (4 Rd)))
+                                            (20 opcode) (14 (= #b10000)) (9 Rn) (4 Rd))
+    (match (M S type opcode)))
 
   ;; C4.6.26
   (define-encoding (fp-data-processing-2src pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
-                                            (20 Rm) (15 opcode) (11 (= #b10)) (9 Rn) (4 Rd)))
+                                            (20 Rm) (15 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
+    (match (M S type opcode)))
 
   ;; C4.6.27
   (define-encoding (fp-data-processing-3src pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11111)) (23 type) (21 o1)
-                                            (20 Rm) (15 o0) (14 Ra) (9 Rn) (4 Rd)))
+                                            (20 Rm) (15 o0) (14 Ra) (9 Rn) (4 Rd))
+    (match (M S type o1 o0)))
 
   ;; C4.6.28
   (define-encoding (fp-imm pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1)) (20 imm8)
-                           (12 (= #b100)) (9 imm5) (4 Rd)))
+                           (12 (= #b100)) (9 imm5) (4 Rd))
+    (match (M S type imm5)))
 
   ;; C4.6.29
   (define-encoding (conv-fp<->fx pc instr (31 sf) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b0))
-                                 (20 rmode) (18 opcode) (15 scale) (9 Rn) (4 Rd)))
+                                 (20 rmode) (18 opcode) (15 scale) (9 Rn) (4 Rd))
+    (match (sf S type rmode opcode scale)))
 
   ;; C4.6.30
   (define-encoding (conv-fp<->int pc instr (31 sf) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
-                                  (20 rmode) (18 opcode) (15 (= #b000000)) (9 Rn) (4 Rd)))
+                                  (20 rmode) (18 opcode) (15 (= #b000000)) (9 Rn) (4 Rd))
+    (match (sf S type rmode opcode)))
 
 ;;; Common API
 

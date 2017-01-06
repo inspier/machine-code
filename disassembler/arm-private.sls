@@ -21,16 +21,60 @@
 #!r6rs
 
 (library (machine-code disassembler arm-private)
-  (export define-encoding)
+  (export define-encoding != &= !&=)
   (import (rnrs)
           (for (machine-code disassembler private)
                (meta -1)))
-  
+
+  (define != (lambda (x y) (not (= x y))))
+
+  ;; (&= x 'b101x) matches when (member x '(#b1010 #b1011))
+  (define-syntax &=
+    (lambda (x)
+      (syntax-case x (quote)
+        [(_ var 'bit-pattern)
+         (and (or (identifier? #'var) (integer? (syntax->datum #'var))) (identifier? #'bit-pattern))
+         (if (not (char=? #\b (string-ref (symbol->string (syntax->datum #'bit-pattern)) 0)))
+             (syntax-violation '&= "Invalid pattern (must be a quoted symbol starting #\\b)" x #'bit-pattern)
+             (let ((pattern (symbol->string (syntax->datum #'bit-pattern))))
+               (let lp ((i 1) (bits 0) (mask 0))
+                 (if (= i (string-length pattern))
+                     (if (eqv? mask 0)
+                         #'#t
+                         #`(eqv? (bitwise-and var #,mask) #,bits))
+                     (case (string-ref pattern i)
+                       [(#\x)
+                        (lp (+ i 1) bits mask)]
+                       [(#\0 #\1)
+                        (let ((bit (if (eqv? (string-ref pattern i) #\0) 0 1))
+                              (idx (- (string-length pattern) i 1)))
+                          (lp (+ i 1)
+                              (bitwise-ior bits (bitwise-arithmetic-shift-left bit idx))
+                              (bitwise-ior mask (bitwise-arithmetic-shift-left 1 idx))))]
+                       [else
+                        (syntax-violation '&= "Invalid pattern (only x, 0 and 1 are allowed)" x #'bit-pattern)])))))]
+        [(_ var bit-pattern)
+         #'(= var bit-pattern)])))
+
+  (define-syntax !&=
+    (lambda (x)
+      (syntax-case x ()
+        [(_ var bit-pattern)
+         #'(not (&= var bit-pattern))])))
+
   ;; Syntax for defining instruction encodings. The fields of the
   ;; instructions are written with the index of the top field bit.
   ;; Fields can be given an identifier which will be bound to the
   ;; field value, or a field constraint. This matches what is seen in
   ;; the instruction set encoding chapters of the ARM manuals.
+
+  (define-syntax field-eqv?
+    (lambda (x)
+      (syntax-case x (!= quote)
+        [(_ field (!= value))
+         #'(!&= field value)]
+        [(_ field value)
+         #'(&= field value)])))
 
   (define-syntax define-encoding
     (lambda (x)
@@ -49,15 +93,15 @@
                                                           " op")
                                          `(lhs* ,rhs*) ...)])
             (let f ((body body))
-              (syntax-case body (select decode)
+              (syntax-case body (select decode match)
                 [(select pc instruction)
                  #'err]
                 [(select pc instruction option option* ...)
                  #`(or (option pc instruction)
                        #,(f #'(select pc instruction option* ...)))]
-                [(decode [test* expr*] ...)
+                [(match (field* ...) [(value* ...) expr*] ...)
                  #'(let ((lhs* rhs*) ...)
-                     (cond [test* expr*] ...
+                     (cond [(and (field-eqv? field* value*) ...) expr*] ...
                            [else err]))]
                 #;
                 [body
