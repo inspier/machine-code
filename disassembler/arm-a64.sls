@@ -283,14 +283,10 @@
   ;; C4.3.1
   (define-encoding (compare&branch/imm pc instr (31 sf) (30 (= #b011010)) (24 op) (23 imm19) (4 Rt))
     (decode
-     [(and (= sf #b0) (= op #b0))
-      `(cbz ,(W Rt) (+ pc ,(* imm19 4)))]
-     [(and (= sf #b0) (= op #b1))
-      `(cbnz ,(W Rt) (+ pc ,(* imm19 4)))]
-     [(and (= sf #b1) (= op #b0))
-      `(cbnz ,(X Rt) (+ pc ,(* imm19 4)))]
-     [(and (= sf #b1) (= op #b1))
-      `(cbnz ,(X Rt) (+ pc ,(* imm19 4)))]))
+     [(and (= sf #b0) (= op #b0)) `(cbz ,(W Rt) ,(pc-rel pc (* imm19 4)))]
+     [(and (= sf #b0) (= op #b1)) `(cbnz ,(W Rt) ,(pc-rel pc (* imm19 4)))]
+     [(and (= sf #b1) (= op #b0)) `(cbz ,(X Rt) ,(pc-rel pc (* imm19 4)))]
+     [(and (= sf #b1) (= op #b1)) `(cbnz ,(X Rt) ,(pc-rel pc (* imm19 4)))]))
 
   ;; C4.3.2
   (define-encoding (cond-branch/imm pc instr (31 (= #b0101010)) (24 o1) (23 imm19) (4 o0) (3 cond*))
