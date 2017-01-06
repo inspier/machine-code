@@ -80,14 +80,11 @@
                 (unless (= (bitwise-and eq-bits eq-mask) eq-bits)
                   (syntax-violation 'define-encoding "Bits do not match the mask, bad constraints?"
                                     x field-spec*))
-                #`(begin
-                    (define (decode-it pc instruction)
-                      wrapped-body)
-                    (define (encoding-name pc instruction)
-                      (and (eqv? (bitwise-and instruction #,eq-mask) #,eq-bits)
-                           (or (eqv? #,neq-mask 0)
-                               (not (eqv? (bitwise-and instruction #,neq-mask) #,neq-bits)))
-                           (decode-it pc instruction)))))]
+                #`(define (encoding-name pc instruction)
+                    (and (eqv? (bitwise-and instruction #,eq-mask) #,eq-bits)
+                         (or (eqv? #,neq-mask 0)
+                             (not (eqv? (bitwise-and instruction #,neq-mask) #,neq-bits)))
+                         wrapped-body)))]
              [((top-bit) field-spec* ...)
               (fixnum? (syntax->datum #'top-bit))
               ;; Ignore anything of the form (<n>).
