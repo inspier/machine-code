@@ -1,3 +1,8 @@
+addons:
+  apt:
+    packages:
+      - guile-2.0
+
 language: c
 
 os:
@@ -7,11 +12,17 @@ compiler:
   - gcc
 
 before_script:
+  # Chez Scheme
   - wget https://github.com/cisco/ChezScheme/archive/master.zip -O ChezScheme-master.zip
   - unzip ChezScheme-master.zip
   - pushd ChezScheme-master && ./configure --installprefix=$TRAVIS_BUILD_DIR/chez && make && make install && popd
   - export PATH=$TRAVIS_BUILD_DIR/chez/bin:$PATH
   - export CHEZSCHEMELIBDIRS=$TRAVIS_BUILD_DIR/..
+  # GNU Guile
+  - export GUILE_LOAD_PATH=$TRAVIS_BUILD_DIR/..
 
 script:
+  # Chez Scheme
   - ./run-tests.sh
+  # GNU Guile
+  - SCHEME="guile -l .r6rs.guile.scm -ds" ./run-tests.sh
