@@ -23,7 +23,7 @@
 ;; Disassembler for some of MIPS II (big-endian).
 
 (library (machine-code disassembler mips)
-  (export get-instruction)
+  (export get-instruction invalid-opcode?)
   (import (rnrs)
           (machine-code disassembler private))
 

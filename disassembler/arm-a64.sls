@@ -41,7 +41,7 @@
 ;; can be used to create an assembler table.
 
 (library (machine-code disassembler arm-a64)
-  (export get-instruction)
+  (export get-instruction invalid-opcode?)
   (import (rnrs)
           (machine-code disassembler arm-private)
           (machine-code disassembler private))
@@ -123,7 +123,7 @@
   (define (mem+ reg offset)
     (if (eqv? offset 0) `((mem+ ,reg)) `((mem+ ,reg ,offset))))
 
-  ;; Memory reference that afterwards increments the register.
+  ;; Memory reference that after the reference increments the register.
   (define (mempost+ reg offset)
     (if (eqv? offset 0) `((mempost+ ,reg)) `((mempost+ ,reg ,offset))))
 

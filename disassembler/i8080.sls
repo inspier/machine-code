@@ -23,7 +23,7 @@
 ;; Disassembler for Intel 8080/8085
 
 (library (machine-code disassembler i8080)
-  (export get-instruction)
+  (export get-instruction invalid-opcode?)
   (import (rnrs)
           (machine-code disassembler private))
 

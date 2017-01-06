@@ -24,7 +24,7 @@
 ;; called CPU12.
 
 (library (machine-code disassembler m68hc12)
-  (export get-instruction)
+  (export get-instruction invalid-opcode?)
   (import (except (rnrs) get-u8)
           (machine-code disassembler private))
 

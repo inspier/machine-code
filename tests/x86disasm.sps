@@ -23,7 +23,6 @@
 
 (import (rnrs)
         (machine-code tests check)
-        (machine-code disassembler)
         (machine-code disassembler x86))
 
 (define (test mode input)

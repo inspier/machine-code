@@ -37,7 +37,7 @@
 ;; suffix is necessary.
 
 (library (machine-code disassembler x86)
-  (export get-instruction)
+  (export get-instruction invalid-opcode?)
   (import (except (rnrs) get-u8)
           (machine-code disassembler private)
           (machine-code disassembler x86-opcodes))

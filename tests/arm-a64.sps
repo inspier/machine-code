@@ -23,8 +23,7 @@
 
 (import (rnrs)
         (machine-code tests check)
-        (machine-code disassembler arm-a64)
-        (only (machine-code disassembler private) invalid-opcode?))
+        (machine-code disassembler arm-a64))
 
 (define (d instruction)
   (let ((bv (make-bytevector 4)))
