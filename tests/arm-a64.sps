@@ -66,6 +66,9 @@
 (check (d #x10000061) => '(adr x1 #x410c))
 (check (d #xb4000060) => '(cbz x0 #x410c))
 (check (d #x1a9f17e2) => '(cset w2 eq))
+(check (d #x8b02039c) => '(add x28 x28 x2))
+
+;; (check (d #x9b017f39) => '(mul x25 x25 x1))
 
 (check-report)
-(exit (if (check-passed? 25) 0 1))
+(exit (if (check-passed? 26) 0 1))
