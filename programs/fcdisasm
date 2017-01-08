@@ -45,7 +45,7 @@
                (display #\space)
                (lp (cdr i)))))
          (display ")"))
-        ((number? i)
+        ((and (number? i) (exact? i) (integer? i))
          (display "#x")
          (display (number->string i 16)))
         (else
