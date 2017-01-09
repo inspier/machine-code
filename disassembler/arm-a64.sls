@@ -1174,30 +1174,30 @@
   (define-encoding (crypto-aes pc instr (31 (= #b01001110)) (23 size) (21 (= #b10100)) (16 opcode) (11 (= #b10))
                                (9 Rn) (4 Rd))
     (match (size opcode)
-      [(#b00 #b00100) `(aese ,(V Rd 16'B) ,(V Rn 16'B))]
-      [(#b00 #b00101) `(aesd ,(V Rd 16'B) ,(V Rn 16'B))]
-      [(#b00 #b00110) `(aesmc ,(V Rd 16'B) ,(V Rn 16'B))]
-      [(#b00 #b00111) `(aesimc ,(V Rd 16'B) ,(V Rn 16'B))]))
+      [(#b00 #b00100) `(aese ,(V Rd 16 'B) ,(V Rn 16 'B))]
+      [(#b00 #b00101) `(aesd ,(V Rd 16 'B) ,(V Rn 16 'B))]
+      [(#b00 #b00110) `(aesmc ,(V Rd 16 'B) ,(V Rn 16 'B))]
+      [(#b00 #b00111) `(aesimc ,(V Rd 16 'B) ,(V Rn 16 'B))]))
 
   ;; C4.6.20
   (define-encoding (crypto-3-reg-sha pc instr (31 (= #b01011110)) (23 size) (21 (= #b0)) (20 Rm) (15 (= #b0))
                                      (14 opcode) (11 (= #b00)) (9 Rn) (4 Rd))
     (match (size opcode)
-      [(#b00 #b000) `(sha1c ,(Q Rd) ,(S Rd) ,(V Rm 4'S))]
-      [(#b00 #b001) `(sha1p ,(Q Rd) ,(S Rd) ,(V Rm 4'S))]
-      [(#b00 #b010) `(sha1m ,(Q Rd) ,(S Rd) ,(V Rm 4'S))]
-      [(#b00 #b011) `(sha1su0 ,(V Rd 4'S) ,(V Rn 4'S) ,(V Rm 4'S))]
-      [(#b00 #b100) `(sha256h ,(Q Rd) ,(Q Rd) ,(V Rm 4'S))]
-      [(#b00 #b101) `(sha256h2 ,(Q Rd) ,(Q Rd) ,(V Rm 4'S))]
-      [(#b00 #b110) `(sha256su1 ,(V Rd 4'S) ,(V Rn 4'S) ,(V Rm 4'S))]))
+      [(#b00 #b000) `(sha1c ,(Q Rd) ,(S Rd) ,(V Rm 4 'S))]
+      [(#b00 #b001) `(sha1p ,(Q Rd) ,(S Rd) ,(V Rm 4 'S))]
+      [(#b00 #b010) `(sha1m ,(Q Rd) ,(S Rd) ,(V Rm 4 'S))]
+      [(#b00 #b011) `(sha1su0 ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(#b00 #b100) `(sha256h ,(Q Rd) ,(Q Rd) ,(V Rm 4 'S))]
+      [(#b00 #b101) `(sha256h2 ,(Q Rd) ,(Q Rd) ,(V Rm 4 'S))]
+      [(#b00 #b110) `(sha256su1 ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 4 'S))]))
 
   ;; C4.6.21
   (define-encoding (crypto-2-reg-sha pc instr (31 (= #b01011110)) (23 size) (21 (= #b10100)) (16 opcode) (11 (= #b10))
                                      (9 Rn) (4 Rd))
     (match (size opcode)
       [(#b00 #b00000) `(sha1h ,(S Rd) ,(S Rn))]
-      [(#b00 #b00001) `(sha1su1 ,(V Rd 4'S) ,(V Rn 4'S))]
-      [(#b00 #b00010) `(sha256su0 ,(V Rd 4'S) ,(V Rn 4'S))]))
+      [(#b00 #b00001) `(sha1su1 ,(V Rd 4 'S) ,(V Rn 4 'S))]
+      [(#b00 #b00010) `(sha256su0 ,(V Rd 4 'S) ,(V Rn 4 'S))]))
 
   ;; C4.6.22
   (define-encoding (fp-compare pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1)) (20 Rm)
