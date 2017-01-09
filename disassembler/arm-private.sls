@@ -38,7 +38,7 @@
              (syntax-violation '&= "Invalid pattern (must be a quoted symbol starting #\\b)" x #'bit-pattern)
              (let ((pattern (symbol->string (syntax->datum #'bit-pattern))))
                (let lp ((i 1) (bits 0) (mask 0))
-                 (if (= i (string-length pattern))
+                 (if (fx=? i (string-length pattern))
                      (if (eqv? mask 0)
                          #'#t
                          #`(eqv? (bitwise-and var #,mask) #,bits))
@@ -54,7 +54,7 @@
                        [else
                         (syntax-violation '&= "Invalid pattern (only x, 0 and 1 are allowed)" x #'bit-pattern)])))))]
         [(_ var bit-pattern)
-         #'(= var bit-pattern)])))
+         #'(eqv? var bit-pattern)])))
 
   (define-syntax !&=
     (lambda (x)
@@ -88,25 +88,24 @@
       (define (wrap-body name lhs* rhs* body)
         (with-syntax ([(lhs* ...) (reverse lhs*)]
                       [(rhs* ...) (reverse rhs*)])
-          (with-syntax ([err #`(raise-UD #,(string-append "Unallocated "
-                                                          (symbol->string (syntax->datum name))
-                                                          " op")
-                                         `(lhs* ,rhs*) ...)])
-            (let f ((body body))
-              (syntax-case body (select decode match)
-                [(select pc instruction)
-                 #'err]
-                [(select pc instruction option option* ...)
-                 #`(or (option pc instruction)
-                       #,(f #'(select pc instruction option* ...)))]
-                [(match (field* ...) [(value* ...) expr*] ...)
-                 #'(let ((lhs* rhs*) ...)
-                     (cond [(and (field-eqv? field* value*) ...) expr*] ...
-                           [else err]))]
-                #;
-                [body
-                 #'(let ((lhs* rhs*) ...)
-                     body)])))))
+          #`(let ((lhs* rhs*) ...)
+              #,(with-syntax ([err #`(raise-UD #,(string-append "Unallocated "
+                                                                (symbol->string (syntax->datum name))
+                                                                " op")
+                                               `(lhs* ,lhs*) ...)])
+                  (let f ((body body))
+                    (syntax-case body (select match)
+                      [(select pc instruction)
+                       #'err]
+                      [(select pc instruction option option* ...)
+                       #`(or (option pc instruction)
+                             #,(f #'(select pc instruction option* ...)))]
+                      [(match (field* ...))
+                       #'err]
+                      [(match (field* ...) [(value* ...) expr*] . k*)
+                       #`(if (and (field-eqv? field* value*) ...)
+                             expr*
+                             #,(f #'(match (field* ...) . k*)))]))))))
       (syntax-case x ()
         [(_ (encoding-name pc instruction field-spec* ...))
          #'(define-encoding (encoding-name pc instruction field-spec* ...)
