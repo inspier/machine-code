@@ -58,7 +58,7 @@
                             #f)))
       (unless (eof-object? (lookahead-u8 port))
         (error 'round-trip "After disassembly there are bytes unread."
-               (get-instruction port mode #f)))
+               (get-instruction port mode #f #f)))
       (unless (= bytes-returned (bytevector-length bv))
         (error 'round-trip "There are bytes missing in the collector function."
                bytes-returned (bytevector-length bv)))

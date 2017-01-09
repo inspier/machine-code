@@ -1,6 +1,6 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
 ;; Assembler for the Intel x86-16/32/64 instruction set.
-;; Copyright © 2008, 2009, 2010, 2011, 2012, 2014, 2015, 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2012, 2014, 2015, 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -1438,7 +1438,7 @@
                        )
                    (print ";Some labels are unknown or changed! Assembling again...")
                    (print ";Unknown labels? " (assembler-state-relocs state))
-                   (lp (+ pass 1) (hashtable-copy new-labels 'immutable)
+                   (lp (+ pass 1) (hashtable-copy new-labels)
                        (make-assembler-state 16 #f 0
                                              (assembler-state-labels state)
                                              #f '() symbols)))
