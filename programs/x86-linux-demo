@@ -2,6 +2,7 @@
 ;; -*- mode: scheme; coding: utf-8 -*- !#
 ;; Demo for (machine-code x86 assembler), makes a Linux ELF binary
 ;; Copyright © 2011, 2016, 2017 Göran Weinholt <goran@weinholt.se>
+;; SPDX-License-Identifier: MIT
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),

@@ -70,6 +70,11 @@ instruction stream.
 
 ## New in 2.0.0
 
+### New disassembler for ARM A64 (used in AArch64, ARMv8)
+
+The new `(machine-code disassembler arm-a64)` library disassembles
+64-bit ARM code.
+
 ### Generic disassembler library
 
 The new `(machine-code disassembler)` library provides an abstract
