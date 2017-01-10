@@ -23,8 +23,7 @@
 (library (machine-code disassembler arm-private)
   (export define-encoding != &= !&=)
   (import (rnrs)
-          (for (machine-code disassembler private)
-               (meta -1)))
+          (machine-code disassembler private))
 
   (define != (lambda (x y) (not (= x y))))
 

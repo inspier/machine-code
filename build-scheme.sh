@@ -69,6 +69,20 @@ export GUILE_LOAD_PATH=$SCHEME_LIBRARY_PATH
 export RUNSCHEME="guile -l $INSTALL_TARGET/share/r6rs.guile.scm -ds"
 EOF
         ;;
+    Racket)
+        # Racket is assumed to be installed via apt.
+        mkdir -p "$INSTALL_TARGET/bin"
+        cat > "$INSTALL_TARGET/bin/scheme-script" <<EOF
+#!/bin/bash
+script="\$1"
+shift
+exec plt-r6rs ++path "$SCHEME_LIBRARY_PATH" <(tail -n +2 "\$script") "\$@"
+EOF
+        chmod 755 $INSTALL_TARGET/bin/scheme-script
+        cat <<EOF
+export -n RUNSCHEME=
+EOF
+        ;;
     Sagittarius)
         (
             curl -L https://bitbucket.org/ktakashi/sagittarius-scheme/downloads/sagittarius-0.7.11.tar.gz > sagittarius.tar.gz

@@ -3,12 +3,14 @@ env:
   matrix:
     - SCHEME="ChezScheme"
     - SCHEME="Guile"
+    - SCHEME="Racket"
     - SCHEME="Sagittarius"
     - SCHEME="Vicare"
 
 addons:
   apt:
     packages:
+      - racket
       - guile-2.0
       # For Sagittarius
       - libgc-dev
