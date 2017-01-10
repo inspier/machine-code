@@ -271,3 +271,4 @@ Author: Göran Weinholt <goran@weinholt.se>.
     disassemble-file))
 
 (main (cdr (command-line)))
+(flush-output-port (current-output-port))

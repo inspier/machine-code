@@ -188,7 +188,7 @@
            `(lsl ,v ,shift))))
 
   (define (pc-rel pc offset)
-    (if pc
+    (if (number? pc)
         (+ pc offset)
         `(+ pc ,offset)))
 

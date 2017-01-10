@@ -43,9 +43,10 @@ cd "$BUILD_DIR"
 case "$SCHEME" in
     ChezScheme)
         (
-            curl -L https://api.github.com/repos/cisco/ChezScheme/tarball > ChezScheme-master.tar.gz
+            wget https://github.com/cisco/ChezScheme/archive/master.tar.gz -O ChezScheme-master.tar.gz
             mkdir chezscheme-master && tar -C chezscheme-master --strip-components 1 -xaf ChezScheme-master.tar.gz
-            pushd chezscheme-master && ./configure --installprefix="$INSTALL_TARGET" && make && make install && popd
+            cd chezscheme-master
+            ./configure --installprefix="$INSTALL_TARGET" && make && make install
         ) > /dev/stderr
         cat <<EOF
 export CHEZSCHEMELIBDIRS=$SCHEME_LIBRARY_PATH
@@ -72,11 +73,39 @@ EOF
         (
             curl -L https://bitbucket.org/ktakashi/sagittarius-scheme/downloads/sagittarius-0.7.11.tar.gz > sagittarius.tar.gz
             mkdir sagittarius-scheme && tar -C sagittarius-scheme --strip-components 1 -xaf sagittarius.tar.gz
-            pushd sagittarius-scheme && cmake . -DCMAKE_INSTALL_PREFIX="$INSTALL_TARGET" && make && make install && popd
+            cd sagittarius-scheme
+            cmake . -DCMAKE_INSTALL_PREFIX="$INSTALL_TARGET" && make && make install
         ) > /dev/stderr
         cat <<EOF
 export SAGITTARIUS_LOADPATH=$SCHEME_LIBRARY_PATH
 export RUNSCHEME="sagittarius -r6"
+EOF
+        ;;
+    Vicare)
+        (
+            # wget https://github.com/marcomaggi/vicare/archive/master.tar.gz -O vicare.tar.gz
+            wget https://bitbucket.org/marcomaggi/vicare-scheme/downloads/vicare-scheme-0.4d0pre5.tar.xz -O vicare.tar.xz
+            mkdir vicare && tar -C vicare --strip-components 1 -xaf vicare.tar.xz
+            cd vicare
+            # sh autogen.sh
+            # ./configure --enable-maintainer-mode --prefix="$INSTALL_TARGET"
+            ./configure --prefix="$INSTALL_TARGET" \
+                        --without-pthread \
+                        --without-libffi \
+                        --without-libiconv \
+                        --without-readline
+            make -j4 && make install
+        ) > /dev/stderr
+        cat > "$INSTALL_TARGET/bin/scheme-script" <<EOF
+#!/bin/sh
+script="\$1"
+shift
+exec $INSTALL_TARGET/bin/vicare --r6rs-script "\$script" -- "\$@"
+EOF
+        chmod 755 $INSTALL_TARGET/bin/scheme-script
+        cat <<EOF
+export VICARE_SOURCE_PATH=$SCHEME_LIBRARY_PATH
+export -n RUNSCHEME=
 EOF
         ;;
 esac

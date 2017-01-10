@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2016 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2016, 2017 Göran Weinholt <goran@weinholt.se>
 
 ;; Permission is hereby granted, free of charge, to any person obtaining a
 ;; copy of this software and associated documentation files (the "Software"),
@@ -48,7 +48,8 @@
     (display checks-passed)
     (display " checks passed\n")
     (unless checks-ok?
-      (display "; There are errors\n")))
+      (display "; There are errors\n"))
+    (flush-output-port (current-output-port)))
 
   (define (check-passed? n)
     (= checks-passed n))
