@@ -162,7 +162,7 @@
                 (with-syntax ((accessor #`(bitwise-bit-field instruction
                                                              (+ #,next-top-bit 1) (+ top-bit 1))))
                   (loop #'(field-spec* ...)
-                        eq-mask neq-bits
+                        eq-mask eq-bits
                         (bitwise-ior neq-mask
                                      (bitwise-arithmetic-shift-left (- (bitwise-arithmetic-shift-left 1 width) 1)
                                                                     bottom-bit))

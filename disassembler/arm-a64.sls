@@ -119,9 +119,12 @@
       (else (error 'V-size-bits "Invalid size" size))))
 
   (define (%V% n lanes size)
-    (assert (fx<=? 0 n 31))
-    (assert (memv size '(B H S D)))
-    (assert (or (not lanes) (memv (fx* lanes (V-size-bits size)) '(64 128))))
+    (unless (fx<=? 0 n 31)
+      (raise-UD "This register can not be encoded" n lanes size))
+    (unless (memv size '(B H S D))
+      (raise-UD "Internal error: invalid register size" n lanes size))
+    (unless (or (not lanes) (memv (fx* lanes (V-size-bits size)) '(64 128)))
+      (raise-UD "Invalid combination of lanes and element size" n lanes size))
     (let* ((shape (string-append (if lanes (number->string lanes) "")
                                  (string-downcase (symbol->string size))))
            (reg (string->symbol (string-append "v" (number->string n) "." shape))))
@@ -414,7 +417,7 @@
     (match (o1 o0)
       [(0 0)
        `(,(string->symbol (string-append "b." (symbol->string (condition-code cond*))))
-         ,(pc-rel pc (bitwise-arithmetic-shift-left (sign-extend imm19 19) 2)))]))
+         ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]))
 
   ;; C4.3.3
   (define-encoding (exception pc instr (31 (= #b11010100)) (23 opc) (20 imm16) (4 op2) (1 LL))
@@ -587,7 +590,7 @@
       [(#b10 1 1) `(ldnp ,(Q Rt) ,(Q Rt2) ,@(mem+ (X/SP Rn) (fxasl (sign-extend imm7 7) 4)))]))
 
   ;; C4.4.8
-  (define-encoding (load/store-reg/imm-postidx pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (22 opc)
+  (define-encoding (load/store-reg/imm-postidx pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
                                                (21 (= #b0)) (20 imm9) (11 (= #b01)) (9 Rn) (4 Rt))
     (match (size V opc)
       [(#b00 0 #b00) `(strb ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
@@ -596,23 +599,23 @@
       [(#b00 0 #b11) `(ldrsb ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
       [(#b00 1 #b00) `(str ,(B Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
       [(#b00 1 #b01) `(ldr ,(B Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
-      [(#b00 1 #b10) `(str ,(Q Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) 4)))]
-      [(#b00 1 #b11) `(ldr ,(Q Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) 4)))]
-      [(#b01 0 #b00) `(strh ,(W Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 0 #b01) `(ldrh ,(W Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 0 #b10) `(ldrsh ,(X Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 0 #b11) `(ldrsh ,(W Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 1 #b00) `(str ,(H Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 1 #b01) `(ldr ,(H Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 0 #b00) `(str ,(W Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 0 #b01) `(ldr ,(W Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 0 #b10) `(ldrsw ,(X Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 1 #b00) `(str ,(S Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 1 #b01) `(ldr ,(S Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 0 #b00) `(str ,(X Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 0 #b01) `(ldr ,(X Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 1 #b00) `(str ,(D Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 1 #b01) `(ldr ,(D Rt) ,@(mempost+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]))
+      [(#b00 1 #b10) `(str ,(Q Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b00 1 #b11) `(ldr ,(Q Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b00) `(strh ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b01) `(ldrh ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b10) `(ldrsh ,(X Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b11) `(ldrsh ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 1 #b00) `(str ,(H Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 1 #b01) `(ldr ,(H Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 0 #b00) `(str ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 0 #b01) `(ldr ,(W Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 0 #b10) `(ldrsw ,(X Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 1 #b00) `(str ,(S Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 1 #b01) `(ldr ,(S Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 0 #b00) `(str ,(X Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 0 #b01) `(ldr ,(X Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 1 #b00) `(str ,(D Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 1 #b01) `(ldr ,(D Rt) ,@(mempost+ (X/SP Rn) (sign-extend imm9 9)))]))
 
   ;; C4.4.9
   (define-encoding (load/store-reg/imm-preidx pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
@@ -624,23 +627,23 @@
       [(#b00 0 #b11) `(ldrsb ,(W Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
       [(#b00 1 #b00) `(str ,(B Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
       [(#b00 1 #b01) `(ldr ,(B Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
-      [(#b00 1 #b10) `(str ,(Q Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) 4)))]
-      [(#b00 1 #b11) `(ldr ,(Q Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) 4)))]
-      [(#b01 0 #b00) `(strh ,(W Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 0 #b01) `(ldrh ,(W Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 0 #b10) `(ldrsh ,(X Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 0 #b11) `(ldrsh ,(W Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 1 #b00) `(str ,(H Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b01 1 #b01) `(ldr ,(H Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 0 #b00) `(str ,(W Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 0 #b01) `(ldr ,(W Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 0 #b10) `(ldrsw ,(X Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 1 #b00) `(str ,(S Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b10 1 #b01) `(ldr ,(S Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 0 #b00) `(str ,(X Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 0 #b01) `(ldr ,(X Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 1 #b00) `(str ,(D Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]
-      [(#b11 1 #b01) `(ldr ,(D Rt) ,@(mempre+ (X/SP Rn) (lsl (sign-extend imm9 9) size)))]))
+      [(#b00 1 #b10) `(str ,(Q Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b00 1 #b11) `(ldr ,(Q Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b00) `(strh ,(W Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b01) `(ldrh ,(W Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b10) `(ldrsh ,(X Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 0 #b11) `(ldrsh ,(W Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 1 #b00) `(str ,(H Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b01 1 #b01) `(ldr ,(H Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 0 #b00) `(str ,(W Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 0 #b01) `(ldr ,(W Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 0 #b10) `(ldrsw ,(X Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 1 #b00) `(str ,(S Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b10 1 #b01) `(ldr ,(S Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 0 #b00) `(str ,(X Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 0 #b01) `(ldr ,(X Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 1 #b00) `(str ,(D Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]
+      [(#b11 1 #b01) `(ldr ,(D Rt) ,@(mempre+ (X/SP Rn) (sign-extend imm9 9)))]))
 
   ;; C4.4.10
   (define-encoding (load/store-reg/reg-offset pc instr (31 size) (29 (= #b111)) (26 V) (25 (= #b00)) (23 opc)
@@ -911,7 +914,6 @@
               `(cset ,(W Rd) ,(inverted-condition-code cond*)))
              (else
               `(csinc ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))))]
-      ;; TODO: aliases for these
       [(0 1 0 #b00) `(csinv ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))]
       [(0 1 0 #b01) `(csneg ,(W Rd) ,(W Rn) ,(W Rm) ,(condition-code cond*))]
       [(1 0 0 #b00) `(csel ,(X Rd) ,(X Rn) ,(X Rm) ,(condition-code cond*))]
@@ -1040,12 +1042,45 @@
   ;; C4.6.2
   (define-encoding (adv-simd-copy pc instr (31 (= #b0)) (30 Q) (29 op) (28 (= #b01110000)) (20 imm5) (15 (= #b0))
                                   (14 imm4) (10 (= #b1)) (9 Rn) (4 Rd))
-    (match (Q op imm5 imm4)))
+    (match (Q op imm5 imm4)
+      [(0 0 'bxxxx1 #b0000) `(dup ,(V Rd 8 'B) ,(V-ref Rn 'B (fxbit-field imm5 1 5)))]
+      [(1 0 'bxxxx1 #b0000) `(dup ,(V Rd 16 'B) ,(V-ref Rn 'B (fxbit-field imm5 1 5)))]
+      [(0 0 'bxxx10 #b0000) `(dup ,(V Rd 4 'H) ,(V-ref Rn 'H (fxbit-field imm5 2 5)))]
+      [(1 0 'bxxx10 #b0000) `(dup ,(V Rd 8 'H) ,(V-ref Rn 'H (fxbit-field imm5 2 5)))]
+      [(0 0 'bxx100 #b0000) `(dup ,(V Rd 2 'S) ,(V-ref Rn 'S (fxbit-field imm5 3 5)))]
+      [(1 0 'bxx100 #b0000) `(dup ,(V Rd 4 'S) ,(V-ref Rn 'S (fxbit-field imm5 3 5)))]
+      [(1 0 'bx1000 #b0000) `(dup ,(V Rd 2 'D) ,(V-ref Rn 'D (fxbit-field imm5 4 5)))]
+      [(0 0 'bxxxx1 #b0001) `(dup ,(V Rd 8 'B) ,(W Rn))]
+      [(1 0 'bxxxx1 #b0001) `(dup ,(V Rd 16 'B) ,(W Rn))]
+      [(0 0 'bxxx10 #b0001) `(dup ,(V Rd 4 'H) ,(W Rn))]
+      [(1 0 'bxxx10 #b0001) `(dup ,(V Rd 8 'H) ,(W Rn))]
+      [(0 0 'bxx100 #b0001) `(dup ,(V Rd 2 'S) ,(W Rn))]
+      [(1 0 'bxx100 #b0001) `(dup ,(V Rd 4 'S) ,(W Rn))]
+      [(1 0 'bx1000 #b0001) `(dup ,(V Rd 2 'D) ,(X Rn))]
+      [(0 0 'bxxxx1 #b0101) `(smov ,(W Rd) ,(V-ref Rn 'B (fxbit-field imm5 1 5)))]
+      [(0 0 'bxxx10 #b0101) `(smov ,(W Rd) ,(V-ref Rn 'H (fxbit-field imm5 2 5)))]
+      [(0 0 'bxxxx1 #b0111) `(umov ,(W Rd) ,(V-ref Rn 'B (fxbit-field imm5 1 5)))]
+      [(0 0 'bxxx10 #b0111) `(umov ,(W Rd) ,(V-ref Rn 'H (fxbit-field imm5 2 5)))]
+      [(0 0 'bxx100 #b0111) `(umov ,(W Rd) ,(V-ref Rn 'S (fxbit-field imm5 3 5)))]
+      [(1 0 'bxxxx1 #b0011) `(ins ,(V-ref Rd 'B (fxbit-field imm5 1 5)) ,(W Rn))]
+      [(1 0 'bxxx10 #b0011) `(ins ,(V-ref Rd 'B (fxbit-field imm5 2 5)) ,(W Rn))]
+      [(1 0 'bxx100 #b0011) `(ins ,(V-ref Rd 'B (fxbit-field imm5 3 5)) ,(W Rn))]
+      [(1 0 'bx1000 #b0011) `(ins ,(V-ref Rd 'B (fxbit-field imm5 4 5)) ,(X Rn))]
+      [(1 0 'bxxxx1 #b0101) `(smov ,(X Rd) ,(V-ref Rn 'B (fxbit-field imm5 1 5)))]
+      [(1 0 'bxxx10 #b0101) `(smov ,(X Rd) ,(V-ref Rn 'H (fxbit-field imm5 2 5)))]
+      [(1 0 'bxx100 #b0101) `(smov ,(X Rd) ,(V-ref Rn 'S (fxbit-field imm5 3 5)))]
+      [(1 0 'bx1000 #b0111) `(umov ,(X Rd) ,(V-ref Rn 'D (fxbit-field imm5 4 5)))]
+      [(1 1 'bxxxx1 'bxxxx) `(ins ,(V-ref Rd 'B (fxbit-field imm4 1 5)) ,(V-ref Rn 'B (fxbit-field imm4 1 5)))]
+      [(1 1 'bxxx10 'bxxxx) `(ins ,(V-ref Rd 'H (fxbit-field imm4 1 5)) ,(V-ref Rn 'H (fxbit-field imm4 1 5)))]
+      [(1 1 'bxx100 'bxxxx) `(ins ,(V-ref Rd 'S (fxbit-field imm4 1 5)) ,(V-ref Rn 'S (fxbit-field imm4 1 5)))]
+      [(1 1 'bx1000 'bxxxx) `(ins ,(V-ref Rd 'D (fxbit-field imm4 1 5)) ,(V-ref Rn 'D (fxbit-field imm4 1 5)))]))
 
   ;; C4.6.3
   (define-encoding (adv-simd-extract pc instr (31 (= #b0)) (30 Q) (29 (= #b101110)) (23 op2) (21 (= #b0)) (20 Rm)
                                      (15 (= #b0)) (14 imm4) (10 (= #b0)) (9 Rn) (4 Rd))
-    (match (op2)))
+    (match (Q op2 imm4)
+      [(0 #b00 'b0xxx) `(ext ,(V Rd 8 'B) ,(V Rn 8 'B) ,(V Rm 8 'B) ,(fxbit-field imm4 0 3))]
+      [(1 #b00 'bxxxx) `(ext ,(V Rd 16 'B) ,(V Rn 16 'B) ,(V Rm 16 'B) ,imm4)]))
 
   ;; C4.6.4
   (define-encoding (adv-simd-modified-imm pc instr (31 (= #b0)) (30 Q) (29 op) (28 (= #b0111100000)) (18 a) (17 b)
@@ -1060,7 +1095,11 @@
   ;; C4.6.6
   (define-encoding (adv-simd-scalar-copy pc instr (31 (= #b01)) (29 op) (28 (= #b11110000)) (20 imm5) (15 (= #b0))
                                          (14 imm4) (10 (= #b1)) (9 Rn) (4 Rd))
-    (match (op imm5 imm4)))
+    (match (op imm5 imm4)
+      [(0 'bxxxx1 #b0000) `(dup ,(B Rd) ,(V-ref Rd 'B (fxbit-field imm5 1 5)))]
+      [(0 'bxxx10 #b0000) `(dup ,(H Rd) ,(V-ref Rd 'H (fxbit-field imm5 2 5)))]
+      [(0 'bxx100 #b0000) `(dup ,(S Rd) ,(V-ref Rd 'S (fxbit-field imm5 3 5)))]
+      [(0 'bx1000 #b0000) `(dup ,(D Rd) ,(V-ref Rd 'D (fxbit-field imm5 4 5)))]))
 
   ;; C4.6.7
   (define-encoding (adv-simd-scalar-pairwise pc instr (31 (= #b01)) (29 U) (28 (= #b11110)) (23 size) (21 (= #b11000))
@@ -1232,17 +1271,51 @@
   ;; C4.6.23
   (define-encoding (fp-cond-compare pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
                                     (20 Rm) (15 cond*) (11 (= #b01)) (9 Rn) (4 op) (3 nzcv))
-    (match (M S type op)))
+    (match (M S type op)
+      [(0 0 #b00 0) `(fccmp ,(S Rn) ,(S Rm) ,nzcv ,(condition-code cond*))]
+      [(0 0 #b00 1) `(fccmpe ,(S Rn) ,(S Rm) ,nzcv ,(condition-code cond*))]
+      [(0 0 #b01 0) `(fccmp ,(D Rn) ,(D Rm) ,nzcv ,(condition-code cond*))]
+      [(0 0 #b01 1) `(fccmpe ,(D Rn) ,(D Rm) ,nzcv ,(condition-code cond*))]))
 
   ;; C4.6.24
-  (define-encoding (fp-cond-select pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
+  (define-encoding (fp-cond-select pc instr (31 M) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1))
                                    (20 Rm) (15 cond*) (11 (= #b11)) (9 Rn) (4 Rd))
-    (match (M S type)))
+    (match (M S* type)
+      [(0 0 #b00) `(fcsel ,(S Rd) ,(S Rn) ,(S Rm) ,(condition-code cond*))]
+      [(0 0 #b01) `(fcsel ,(D Rd) ,(D Rn) ,(D Rm) ,(condition-code cond*))]))
 
   ;; C4.6.25
   (define-encoding (fp-data-processing-1src pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
                                             (20 opcode) (14 (= #b10000)) (9 Rn) (4 Rd))
-    (match (M S type opcode)))
+    (match (M S type opcode)
+      [(0 0 #b00 #b000000) `(fmov ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b000001) `(fabs ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b000010) `(fneg ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b000011) `(fsqrt ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b000101) `(fcvt ,(D Rd) ,(S Rn))]
+      [(0 0 #b00 #b000111) `(fcvt ,(H Rd) ,(S Rn))]
+      [(0 0 #b00 #b001000) `(frintn ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b001001) `(frintp ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b001010) `(frintm ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b001011) `(frintz ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b001100) `(frinta ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b001110) `(frintx ,(S Rd) ,(S Rn))]
+      [(0 0 #b00 #b001111) `(frinti ,(S Rd) ,(S Rn))]
+      [(0 0 #b01 #b000000) `(fmov ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b000001) `(fabs ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b000010) `(fneg ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b000011) `(fsqrt ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b000100) `(fcvt ,(S Rd) ,(D Rn))]
+      [(0 0 #b01 #b000111) `(fcvt ,(H Rd) ,(D Rn))]
+      [(0 0 #b01 #b001000) `(frintn ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b001001) `(frintp ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b001010) `(frintm ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b001011) `(frintz ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b001100) `(frinta ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b001110) `(frintx ,(D Rd) ,(D Rn))]
+      [(0 0 #b01 #b001111) `(frinti ,(D Rd) ,(D Rn))]
+      [(0 0 #b11 #b000100) `(fcvt ,(S Rd) ,(H Rn))]
+      [(0 0 #b11 #b000101) `(fcvt ,(D Rd) ,(H Rn))]))
 
   ;; C4.6.26
   (define-encoding (fp-data-processing-2src pc instr (31 M) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1))
@@ -1270,7 +1343,15 @@
   ;; C4.6.27
   (define-encoding (fp-data-processing-3src pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11111)) (23 type) (21 o1)
                                             (20 Rm) (15 o0) (14 Ra) (9 Rn) (4 Rd))
-    (match (M S type o1 o0)))
+    (match (M S type o1 o0)
+      [(0 0 #b00 0 0) `(fmadd ,(S Rd) ,(S Rn) ,(S Rm) ,(S Ra))]
+      [(0 0 #b00 0 1) `(fmsub ,(S Rd) ,(S Rn) ,(S Rm) ,(S Ra))]
+      [(0 0 #b00 1 0) `(fnmadd ,(S Rd) ,(S Rn) ,(S Rm) ,(S Ra))]
+      [(0 0 #b00 1 1) `(fnmsub ,(S Rd) ,(S Rn) ,(S Rm) ,(S Ra))]
+      [(0 0 #b01 0 0) `(fmadd ,(D Rd) ,(D Rn) ,(D Rm) ,(D Ra))]
+      [(0 0 #b01 0 1) `(fmsub ,(D Rd) ,(D Rn) ,(D Rm) ,(D Ra))]
+      [(0 0 #b01 1 0) `(fnmadd ,(D Rd) ,(D Rn) ,(D Rm) ,(D Ra))]
+      [(0 0 #b01 1 1) `(fnmsub ,(D Rd) ,(D Rn) ,(D Rm) ,(D Ra))]))
 
   ;; C4.6.28
   (define-encoding (fp-imm pc instr (31 M) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1)) (20 imm8)
