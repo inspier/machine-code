@@ -213,15 +213,16 @@
   (define (mempre+ reg offset)
     (if (eqv? offset 0) `((mempre+ ,reg)) `((mempre+ ,reg ,offset))))
 
+  ;; Replicates a bit battern from `from` bits wide to `to` bits wide.
+  (define (replicate x from to)
+    (if (fx<? from to)
+        (replicate (bitwise-ior x (bitwise-arithmetic-shift-left x from))
+                   (fx* from 2)
+                   to)
+        (bitwise-bit-field x 0 to)))
+
   ;; Decodes bit masks. Returns two interpretations: bitfield and logical immediate.
   (define (decode-bit-masks width N imms immr immediate?)
-    ;; Replicates a bit battern from `from` bits wide to `to` bits wide.
-    (define (replicate x from to)
-      (if (fx<? from to)
-          (replicate (bitwise-ior x (bitwise-arithmetic-shift-left x from))
-                     (fx* from 2)
-                     to)
-          (bitwise-bit-field x 0 to)))
     (let ((len (fx- (fxlength (fxior (bitwise-arithmetic-shift-left N 6) (fxxor imms #b111111)))
                     1)))
       (when (fx<? len 0)
@@ -295,20 +296,59 @@
           (mantissa (/ (fx+ 16 (fxbit-field imm8 0 4)) 16)))
       (inexact (* (expt -1 S) (expt 2 exp) mantissa))))
 
+  ;; This is used to encode immediate operands for a few instructions.
+  (define (adv-simd-expand-imm arch size op cmode imm8)
+    (case cmode
+      ((#b0000 #b0001)
+       (replicate imm8 32 size))
+      ((#b0010 #b0011)
+       (replicate (fxasl imm8 8) 32 size))
+      ((#b0110 #b0111)
+       (replicate (fxasl imm8 16) 32 size))
+      ((#b1000 #b1001)
+       (replicate imm8 16 size))
+      ((#b1010 #b1011)
+       (replicate (fxasl imm8 8) 16 size))
+      ((#b1100)
+       (replicate (fxior (fxasl imm8 8) #xff) 32 size))
+      ((#b1101)
+       (replicate (fxior (fxasl imm8 16) #xffff) 32 size))
+      ((#b1110)
+       (case op
+         ((0) (replicate imm8 8 size))
+         (else
+          ;; Each bit becomes eight bits wide.
+          (do ((i 0 (fx+ i 1))
+               (ret 0 (bitwise-ior ret (bitwise-arithmetic-shift-left (fx* #xff (fxand 1 (fxasr imm8 i)))
+                                                                      (fx* i 8)))))
+              ((fx=? i 8) ret)))))
+      ((#b1111)
+       ;; Some kind of floating point constants.
+       (case op
+         ((0) (replicate (bitwise-arithmetic-shift-left (fxior (fxasl (fxxor #b01 (fxbit-field imm8 6 8)) (fx+ 6 5))
+                                                               (fxasl (replicate (fxbit-field imm8 6 7) 1 5) 6)
+                                                               (fxbit-field imm8 0 6))
+                                                        19)
+                         32 size))
+         (else
+          (unless (eq? arch 'AArch64)
+            (raise-UD "Reserved adv-simd-expand-imm" arch size op cmode imm8))
+          (bitwise-arithmetic-shift-left (fxior (fxasl (fxxor #b01 (fxbit-field imm8 6 8)) (fx+ 6 5))
+                                                (fxasl (replicate (fxbit-field imm8 6 7) 1 5) 6)
+                                                (fxbit-field imm8 0 6))
+                                         48))))
+      (else
+       (raise-UD "Unimplemented cmode in adv-simd-expand-imm" op cmode imm8))))
+
 ;;; Decode tables
 
   (define-encoding (main pc instr (31) (28 op0) (24))
     (select pc instr
-            #;unallocated
             data-processing/imm
             branch/exception/system
             loads/stores
             data-processing/reg
             data-processing/simd&fp))
-
-  #;
-  (define-encoding (unallocated pc instr (31) (28 (= #b00)) (26))
-    (match (instr)))
 
 ;;; C4.2
 
@@ -1037,7 +1077,46 @@
   ;; C4.6.1
   (define-encoding (adv-simd-across-lanes pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size)
                                           (21 (= #b11000)) (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
-    (match (U size opcode)))
+    (match (Q U size opcode)
+      [(0 0 #b00 #b00011) `(saddlv ,(H Rd) ,(V Rn 8 'B))]
+      [(1 0 #b00 #b00011) `(saddlv ,(H Rd) ,(V Rn 16 'B))]
+      [(0 0 #b01 #b00011) `(saddlv ,(S Rd) ,(V Rn 4 'H))]
+      [(1 0 #b01 #b00011) `(saddlv ,(S Rd) ,(V Rn 8 'H))]
+      [(1 0 #b10 #b00011) `(saddlv ,(D Rd) ,(V Rn 4 'S))]
+      [(0 0 #b00 #b01010) `(smaxv ,(B Rd) ,(V Rn 8 'B))]
+      [(1 0 #b00 #b01010) `(smaxv ,(B Rd) ,(V Rn 16 'B))]
+      [(0 0 #b01 #b01010) `(smaxv ,(H Rd) ,(V Rn 4 'H))]
+      [(1 0 #b01 #b01010) `(smaxv ,(H Rd) ,(V Rn 8 'H))]
+      [(1 0 #b10 #b01010) `(smaxv ,(S Rd) ,(V Rn 4 'S))]
+      [(0 0 #b00 #b11010) `(sminv ,(B Rd) ,(V Rn 8 'B))]
+      [(1 0 #b00 #b11010) `(sminv ,(B Rd) ,(V Rn 16 'B))]
+      [(0 0 #b01 #b11010) `(sminv ,(H Rd) ,(V Rn 4 'H))]
+      [(1 0 #b01 #b11010) `(sminv ,(H Rd) ,(V Rn 8 'H))]
+      [(1 0 #b10 #b11010) `(sminv ,(S Rd) ,(V Rn 4 'S))]
+      [(0 0 #b00 #b11011) `(addv ,(B Rd) ,(V Rn 8 'B))]
+      [(1 0 #b00 #b11011) `(addv ,(B Rd) ,(V Rn 16 'B))]
+      [(0 0 #b01 #b11011) `(addv ,(H Rd) ,(V Rn 4 'H))]
+      [(1 0 #b01 #b11011) `(addv ,(H Rd) ,(V Rn 8 'H))]
+      [(1 0 #b10 #b11011) `(addv ,(S Rd) ,(V Rn 4 'S))]
+      [(0 1 #b00 #b00011) `(uaddlv ,(H Rd) ,(V Rn 8 'B))]
+      [(1 1 #b00 #b00011) `(uaddlv ,(H Rd) ,(V Rn 16 'B))]
+      [(0 1 #b01 #b00011) `(uaddlv ,(S Rd) ,(V Rn 4 'H))]
+      [(1 1 #b01 #b00011) `(uaddlv ,(S Rd) ,(V Rn 8 'H))]
+      [(1 1 #b10 #b00011) `(uaddlv ,(D Rd) ,(V Rn 4 'S))]
+      [(0 1 #b00 #b01010) `(umaxv ,(B Rd) ,(V Rn 8 'B))]
+      [(1 1 #b00 #b01010) `(umaxv ,(B Rd) ,(V Rn 16 'B))]
+      [(0 1 #b01 #b01010) `(umaxv ,(H Rd) ,(V Rn 4 'H))]
+      [(1 1 #b01 #b01010) `(umaxv ,(H Rd) ,(V Rn 8 'H))]
+      [(1 1 #b10 #b01010) `(umaxv ,(S Rd) ,(V Rn 4 'S))]
+      [(0 1 #b00 #b11010) `(uminv ,(B Rd) ,(V Rn 8 'B))]
+      [(1 1 #b00 #b11010) `(uminv ,(B Rd) ,(V Rn 16 'B))]
+      [(0 1 #b01 #b11010) `(uminv ,(H Rd) ,(V Rn 4 'H))]
+      [(1 1 #b01 #b11010) `(uminv ,(H Rd) ,(V Rn 8 'H))]
+      [(1 1 #b10 #b11010) `(uminv ,(S Rd) ,(V Rn 4 'S))]
+      [(1 1 #b00 #b01100) `(fmaxnmv ,(S Rd) ,(V Rn 4 'S))]
+      [(1 1 #b00 #b01111) `(fmaxv ,(S Rd) ,(V Rn 4 'S))]
+      [(1 1 #b10 #b01100) `(fminnmv ,(S Rd) ,(V Rn 4 'S))]
+      [(1 1 #b10 #b01111) `(fminv ,(S Rd) ,(V Rn 4 'S))]))
 
   ;; C4.6.2
   (define-encoding (adv-simd-copy pc instr (31 (= #b0)) (30 Q) (29 op) (28 (= #b01110000)) (20 imm5) (15 (= #b0))
@@ -1071,9 +1150,9 @@
       [(1 0 'bxx100 #b0101) `(smov ,(X Rd) ,(V-ref Rn 'S (fxbit-field imm5 3 5)))]
       [(1 0 'bx1000 #b0111) `(umov ,(X Rd) ,(V-ref Rn 'D (fxbit-field imm5 4 5)))]
       [(1 1 'bxxxx1 'bxxxx) `(ins ,(V-ref Rd 'B (fxbit-field imm4 1 5)) ,(V-ref Rn 'B (fxbit-field imm4 1 5)))]
-      [(1 1 'bxxx10 'bxxxx) `(ins ,(V-ref Rd 'H (fxbit-field imm4 1 5)) ,(V-ref Rn 'H (fxbit-field imm4 1 5)))]
-      [(1 1 'bxx100 'bxxxx) `(ins ,(V-ref Rd 'S (fxbit-field imm4 1 5)) ,(V-ref Rn 'S (fxbit-field imm4 1 5)))]
-      [(1 1 'bx1000 'bxxxx) `(ins ,(V-ref Rd 'D (fxbit-field imm4 1 5)) ,(V-ref Rn 'D (fxbit-field imm4 1 5)))]))
+      [(1 1 'bxxx10 'bxxxx) `(ins ,(V-ref Rd 'H (fxbit-field imm4 2 5)) ,(V-ref Rn 'H (fxbit-field imm4 2 5)))]
+      [(1 1 'bxx100 'bxxxx) `(ins ,(V-ref Rd 'S (fxbit-field imm4 3 5)) ,(V-ref Rn 'S (fxbit-field imm4 3 5)))]
+      [(1 1 'bx1000 'bxxxx) `(ins ,(V-ref Rd 'D (fxbit-field imm4 4 5)) ,(V-ref Rn 'D (fxbit-field imm4 4 5)))]))
 
   ;; C4.6.3
   (define-encoding (adv-simd-extract pc instr (31 (= #b0)) (30 Q) (29 (= #b101110)) (23 op2) (21 (= #b0)) (20 Rm)
@@ -1104,7 +1183,18 @@
   ;; C4.6.7
   (define-encoding (adv-simd-scalar-pairwise pc instr (31 (= #b01)) (29 U) (28 (= #b11110)) (23 size) (21 (= #b11000))
                                              (16 opcode) (11 (= #b10)) (9 Rn) (4 Rd))
-    (match (U size opcode)))
+    (match (U size opcode)
+      [(0 #b11 #b11011) `(addp ,(D Rd) ,(V Rn 2 'D))]
+      [(1 #b00 #b01100) `(fmaxnmp ,(S Rd) ,(V Rn 2 'S))]
+      [(1 #b01 #b01100) `(fmaxnmp ,(D Rd) ,(V Rn 2 'D))]
+      [(1 #b00 #b01101) `(faddp ,(S Rd) ,(V Rn 2 'S))]
+      [(1 #b01 #b01101) `(faddp ,(D Rd) ,(V Rn 2 'D))]
+      [(1 #b00 #b01111) `(fmaxp ,(S Rd) ,(V Rn 2 'S))]
+      [(1 #b01 #b01111) `(fmaxp ,(D Rd) ,(V Rn 2 'D))]
+      [(1 #b10 #b01100) `(fminnmp ,(S Rd) ,(V Rn 2 'S))]
+      [(1 #b11 #b01100) `(fminnmp ,(D Rd) ,(V Rn 2 'D))]
+      [(1 #b10 #b01111) `(fminp ,(S Rd) ,(V Rn 2 'S))]
+      [(1 #b11 #b01111) `(fminp ,(D Rd) ,(V Rn 2 'D))]))
 
   ;; C4.6.8
   (define-encoding (adv-simd-scalar-shift-imm pc instr (31 (= #b01)) (29 U) (28 (= #b111110)) (22 immh) (18 immb)
@@ -1181,19 +1271,349 @@
     (match (U size opcode)))
 
   ;; C4.6.13
-  (define-encoding (adv-simd-shift-by-imm pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b011110)) (22 (!= #b0000) immh)
+  (define-encoding (adv-simd-shift-by-imm pc instr (31 (= #b0)) (30 Q*) (29 U) (28 (= #b011110)) (22 (!= #b0000) immh)
                                           (18 immb) (15 opcode) (10 (= #b1)) (9 Rn) (4 Rd))
-    (match (U opcode)))
+    (match (Q* U immh opcode)
+      [(0 0 'b0001 #b00000) `(sshr ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b00000) `(sshr ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b00000) `(sshr ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b00000) `(sshr ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b00000) `(sshr ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b00000) `(sshr ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b1xxx #b00000) `(sshr ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b00010) `(ssra ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b00010) `(ssra ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b00010) `(ssra ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b00010) `(ssra ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b00010) `(ssra ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b00010) `(ssra ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b1xxx #b00010) `(ssra ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b00100) `(srshr ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b00100) `(srshr ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b00100) `(srshr ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b00100) `(srshr ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b00100) `(srshr ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b00100) `(srshr ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b1xxx #b00100) `(srshr ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b00110) `(srsra ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b00110) `(srsra ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b00110) `(srsra ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b00110) `(srsra ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b00110) `(srsra ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b00110) `(srsra ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b1xxx #b00110) `(srsra ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b01010) `(shl ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(1 0 'b0001 #b01010) `(shl ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(0 0 'b001x #b01010) `(shl ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(1 0 'b001x #b01010) `(shl ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(0 0 'b01xx #b01010) `(shl ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 0 'b01xx #b01010) `(shl ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 0 'b1xxx #b01010) `(shl ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- (fxior (fxasl immh 3) immb) 64))]
+      [(0 0 'b0001 #b01110) `(sqshl ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(1 0 'b0001 #b01110) `(sqshl ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(0 0 'b001x #b01110) `(sqshl ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(1 0 'b001x #b01110) `(sqshl ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(0 0 'b01xx #b01110) `(sqshl ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 0 'b01xx #b01110) `(sqshl ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 0 'b1xxx #b01110) `(sqshl ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- (fxior (fxasl immh 3) immb) 64))]
+      [(0 0 'b0001 #b10000) `(shrn ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b10000) `(shrn2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b10000) `(shrn ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b10000) `(shrn2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b10000) `(shrn ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b10000) `(shrn2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b10001) `(rshrn ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b10001) `(rshrn2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b10001) `(rshrn ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b10001) `(rshrn2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b10001) `(rshrn ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b10001) `(rshrn2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b10010) `(sqshrn ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b10010) `(sqshrn2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b10010) `(sqshrn ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b10010) `(sqshrn2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b10010) `(sqshrn ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b10010) `(sqshrn2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b10011) `(sqrshrn ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b0001 #b10011) `(sqrshrn2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b001x #b10011) `(sqrshrn ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b001x #b10011) `(sqrshrn2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b10011) `(sqrshrn ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b10011) `(sqrshrn2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b0001 #b10100) `(sshll ,(V Rd 8 'H) ,(V Rn 8 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(1 0 'b0001 #b10100) `(sshll2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(0 0 'b001x #b10100) `(sshll ,(V Rd 4 'S) ,(V Rn 4 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(1 0 'b001x #b10100) `(sshll2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(0 0 'b01xx #b10100) `(sshll ,(V Rd 2 'D) ,(V Rn 2 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 0 'b01xx #b10100) `(sshll2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(0 0 'b01xx #b11100) `(scvtf ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b11100) `(scvtf ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b1xxx #b11100) `(scvtf ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 0 'b01xx #b11111) `(fcvtzs ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b01xx #b11111) `(fcvtzs ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(1 0 'b1xxx #b11111) `(fcvtzs ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b00000) `(ushr ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b00000) `(ushr ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b00000) `(ushr ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b00000) `(ushr ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b00000) `(ushr ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b00000) `(ushr ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b00000) `(ushr ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b00010) `(usra ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b00010) `(usra ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b00010) `(usra ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b00010) `(usra ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b00010) `(usra ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b00010) `(usra ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b00010) `(usra ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b00100) `(urshr ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b00100) `(urshr ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b00100) `(urshr ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b00100) `(urshr ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b00100) `(urshr ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b00100) `(urshr ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b00100) `(urshr ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b00110) `(ursra ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b00110) `(ursra ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b00110) `(ursra ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b00110) `(ursra ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b00110) `(ursra ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b00110) `(ursra ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b00110) `(ursra ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b01000) `(sri ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b01000) `(sri ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b01000) `(sri ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b01000) `(sri ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b01000) `(sri ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b01000) `(sri ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b01000) `(sri ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b01010) `(sli ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b01010) `(sli ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b01010) `(sli ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b01010) `(sli ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b01010) `(sli ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b01010) `(sli ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b01010) `(sli ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b01100) `(sqshlu ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(1 1 'b0001 #b01100) `(sqshlu ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(0 1 'b001x #b01100) `(sqshlu ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(1 1 'b001x #b01100) `(sqshlu ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(0 1 'b01xx #b01100) `(sqshlu ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 1 'b01xx #b01100) `(sqshlu ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 1 'b1xxx #b01100) `(sqshlu ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- (fxior (fxasl immh 3) immb) 64))]
+      [(0 1 'b0001 #b01110) `(uqshl ,(V Rd 8 'B) ,(V Rn 8 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(1 1 'b0001 #b01110) `(uqshl ,(V Rd 16 'B) ,(V Rn 16 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(0 1 'b001x #b01110) `(uqshl ,(V Rd 4 'H) ,(V Rn 4 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(1 1 'b001x #b01110) `(uqshl ,(V Rd 8 'H) ,(V Rn 8 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(0 1 'b01xx #b01110) `(uqshl ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 1 'b01xx #b01110) `(uqshl ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 1 'b1xxx #b01110) `(uqshl ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- (fxior (fxasl immh 3) immb) 64))]
+      [(0 1 'b0001 #b10000) `(sqshrun ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b10000) `(sqshrun2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b10000) `(sqshrun ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b10000) `(sqshrun2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b10000) `(sqshrun ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b10000) `(sqshrun2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b10001) `(sqrshrun ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b10001) `(sqrshrun2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b10001) `(sqrshrun ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b10001) `(sqrshrun2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b10001) `(sqrshrun ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b10001) `(sqrshrun2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b10010) `(uqshrn ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b10010) `(uqshrn2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b10010) `(uqshrn ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b10010) `(uqshrn2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b10010) `(uqshrn ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b10010) `(uqshrn2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b10011) `(uqrshrn ,(V Rn 8 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b0001 #b10011) `(uqrshrn2 ,(V Rn 16 'B) ,(V Rd 8 'H) ,(fx- 16 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b001x #b10011) `(uqrshrn ,(V Rn 4 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b001x #b10011) `(uqrshrn2 ,(V Rn 8 'H) ,(V Rd 4 'S) ,(fx- 32 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b10011) `(uqrshrn ,(V Rn 2 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b10011) `(uqrshrn2 ,(V Rn 4 'S) ,(V Rd 2 'D) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b0001 #b10100) `(ushll ,(V Rd 8 'H) ,(V Rn 8 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(1 1 'b0001 #b10100) `(ushll2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(fx- (fxior (fxasl immh 3) immb) 8))]
+      [(0 1 'b001x #b10100) `(ushll ,(V Rd 4 'S) ,(V Rn 4 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(1 1 'b001x #b10100) `(ushll2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(fx- (fxior (fxasl immh 3) immb) 16))]
+      [(0 1 'b01xx #b10100) `(ushll ,(V Rd 2 'D) ,(V Rn 2 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(1 1 'b01xx #b10100) `(ushll2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(fx- (fxior (fxasl immh 3) immb) 32))]
+      [(0 1 'b01xx #b11100) `(ucvtf ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b11100) `(ucvtf ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b11100) `(ucvtf ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(0 1 'b01xx #b11111) `(fcvtzu ,(V Rd 2 'S) ,(V Rn 2 'S) ,(fx- 64 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b01xx #b11111) `(fcvtzu ,(V Rd 4 'S) ,(V Rn 4 'S) ,(fx- 128 (fxior (fxasl immh 3) immb)))]
+      [(1 1 'b1xxx #b11111) `(fcvtzu ,(V Rd 2 'D) ,(V Rn 2 'D) ,(fx- 128 (fxior (fxasl immh 3) immb)))]))
 
   ;; C4.6.14
-  (define-encoding (adv-simd-table-lookup pc instr (31 (= #b0)) (30 Q) (29 (= #b001110)) (23 op2) (21 (= #b0))
+  (define-encoding (adv-simd-table-lookup pc instr (31 (= #b0)) (30 Q*) (29 (= #b001110)) (23 op2) (21 (= #b0))
                                           (20 Rm) (15 (= #b0)) (14 len) (12 op) (11 (= #b00)) (9 Rn) (4 Rd))
-    (match (op2 len op)))
+    (match (Q* op2 len op)
+      [(0 #b00 'bxx 0) `(tbl ,(V Rd 8 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 8 'B))]
+      [(1 #b00 'bxx 0) `(tbl ,(V Rd 16 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 16 'B))]
+      [(0 #b00 'bxx 0) `(tbx ,(V Rd 8 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 8 'B))]
+      [(1 #b00 'bxx 0) `(tbx ,(V Rd 16 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 16 'B))]))
 
   ;; C4.6.15
-  (define-encoding (adv-simd-3-diff pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size) (21 (= #b1))
+  (define-encoding (adv-simd-3-diff pc instr (31 (= #b0)) (30 Q*) (29 U) (28 (= #b01110)) (23 size) (21 (= #b1))
                                     (20 Rm) (15 opcode) (11 (= #b00)) (9 Rn) (4 Rd))
-    (match (U opcode)))
+    (match (Q* U size opcode)
+      [(0 0 #b00 #b0000) `(saddl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0000) `(saddl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0000) `(saddl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0000) `(saddl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0000) `(saddl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0000) `(saddl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0001) `(saddw ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0001) `(saddw2 ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0001) `(saddw ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0001) `(saddw2 ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0001) `(saddw ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0001) `(saddw2 ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0010) `(ssubl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0010) `(ssubl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0010) `(ssubl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0010) `(ssubl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0010) `(ssubl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0010) `(ssubl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0011) `(ssubw ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0011) `(ssubw2 ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0011) `(ssubw ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0011) `(ssubw2 ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0011) `(ssubw ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0011) `(ssubw2 ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0100) `(addhn ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0100) `(addhn2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0100) `(addhn ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0100) `(addhn2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0100) `(addhn ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0100) `(addhn2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0101) `(sabal ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0101) `(sabal2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0101) `(sabal ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0101) `(sabal2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0101) `(sabal ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0101) `(sabal2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0110) `(subhn ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0110) `(subhn2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0110) `(subhn ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0110) `(subhn2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0110) `(subhn ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0110) `(subhn2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b0111) `(sabdl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b0111) `(sabdl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b0111) `(sabdl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b0111) `(sabdl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b0111) `(sabdl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b0111) `(sabdl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1000) `(smlal ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1000) `(smlal2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1000) `(smlal ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1000) `(smlal2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1000) `(smlal ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1000) `(smlal2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1001) `(sqdmlal ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1001) `(sqdmlal2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1001) `(sqdmlal ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1001) `(sqdmlal2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1001) `(sqdmlal ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1001) `(sqdmlal2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1010) `(smlsl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1010) `(smlsl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1010) `(smlsl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1010) `(smlsl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1010) `(smlsl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1010) `(smlsl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1011) `(sqdmlsl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1011) `(sqdmlsl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1011) `(sqdmlsl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1011) `(sqdmlsl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1011) `(sqdmlsl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1011) `(sqdmlsl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1100) `(smull ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1100) `(smull2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1100) `(smull ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1100) `(smull2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1100) `(smull ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1100) `(smull2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1101) `(sqdmull ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1101) `(sqdmull2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1101) `(sqdmull ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1101) `(sqdmull2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1101) `(sqdmull ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1101) `(sqdmull2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 0 #b00 #b1110) `(pmull ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 0 #b00 #b1110) `(pmull2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 0 #b01 #b1110) `(pmull ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 0 #b01 #b1110) `(pmull2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 0 #b10 #b1110) `(pmull ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 0 #b10 #b1110) `(pmull2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b0000) `(uaddl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b0000) `(uaddl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b0000) `(uaddl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b0000) `(uaddl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b0000) `(uaddl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b0000) `(uaddl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b0001) `(uaddw ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b0001) `(uaddw2 ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b0001) `(uaddw ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b0001) `(uaddw2 ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b0001) `(uaddw ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b0001) `(uaddw2 ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b0010) `(usubl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b0010) `(usubl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b0010) `(usubl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b0010) `(usubl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b0010) `(usubl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b0010) `(usubl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b0011) `(usubw ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b0011) `(usubw2 ,(V Rd 8 'H) ,(V Rn 8 'H) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b0011) `(usubw ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b0011) `(usubw2 ,(V Rd 4 'S) ,(V Rn 4 'S) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b0011) `(usubw ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b0011) `(usubw2 ,(V Rd 2 'D) ,(V Rn 2 'D) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b0100) `(raddhn ,(V Rd 8 'B) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(1 1 #b00 #b0100) `(raddhn2 ,(V Rd 16 'B) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b01 #b0100) `(raddhn ,(V Rd 4 'H) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(1 1 #b01 #b0100) `(raddhn2 ,(V Rd 8 'H) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b10 #b0100) `(raddhn ,(V Rd 2 'S) ,(V Rn 2 'D) ,(V Rm 2 'D))]
+      [(1 1 #b10 #b0100) `(raddhn2 ,(V Rd 4 'S) ,(V Rn 2 'D) ,(V Rm 2 'D))]
+      [(0 1 #b00 #b0101) `(uabal ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b0101) `(uabal2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b0101) `(uabal ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b0101) `(uabal2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b0101) `(uabal ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b0101) `(uabal2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b0110) `(rsubhn ,(V Rd 8 'B) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(1 1 #b00 #b0110) `(rsubhn2 ,(V Rd 16 'B) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b01 #b0110) `(rsubhn ,(V Rd 4 'H) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(1 1 #b01 #b0110) `(rsubhn2 ,(V Rd 8 'H) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b10 #b0110) `(rsubhn ,(V Rd 2 'S) ,(V Rn 2 'D) ,(V Rm 2 'D))]
+      [(1 1 #b10 #b0110) `(rsubhn2 ,(V Rd 4 'S) ,(V Rn 2 'D) ,(V Rm 2 'D))]
+      [(0 1 #b00 #b0111) `(uabdl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b0111) `(uabdl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b0111) `(uabdl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b0111) `(uabdl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b0111) `(uabdl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b0111) `(uabdl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b1000) `(umlal ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b1000) `(umlal2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b1000) `(umlal ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b1000) `(umlal2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b1000) `(umlal ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b1000) `(umlal2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b1010) `(umlsl ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b1010) `(umlsl2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b1010) `(umlsl ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b1010) `(umlsl2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b1010) `(umlsl ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b1010) `(umlsl2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]
+      [(0 1 #b00 #b1100) `(umull ,(V Rd 8 'H) ,(V Rn 8 'B) ,(V Rm 8 'B))]
+      [(1 1 #b00 #b1100) `(umull2 ,(V Rd 8 'H) ,(V Rn 16 'B) ,(V Rm 16 'B))]
+      [(0 1 #b01 #b1100) `(umull ,(V Rd 4 'S) ,(V Rn 4 'H) ,(V Rm 4 'H))]
+      [(1 1 #b01 #b1100) `(umull2 ,(V Rd 4 'S) ,(V Rn 8 'H) ,(V Rm 8 'H))]
+      [(0 1 #b10 #b1100) `(umull ,(V Rd 2 'D) ,(V Rn 2 'S) ,(V Rm 2 'S))]
+      [(1 1 #b10 #b1100) `(umull2 ,(V Rd 2 'D) ,(V Rn 4 'S) ,(V Rm 4 'S))]))
 
   ;; C4.6.16
   (define-encoding (adv-simd-3-same pc instr (31 (= #b0)) (30 Q) (29 U) (28 (= #b01110)) (23 size) (21 ( = #b1))
@@ -1285,9 +1705,9 @@
       [(0 0 #b01) `(fcsel ,(D Rd) ,(D Rn) ,(D Rm) ,(condition-code cond*))]))
 
   ;; C4.6.25
-  (define-encoding (fp-data-processing-1src pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1))
+  (define-encoding (fp-data-processing-1src pc instr (31 M) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1))
                                             (20 opcode) (14 (= #b10000)) (9 Rn) (4 Rd))
-    (match (M S type opcode)
+    (match (M S* type opcode)
       [(0 0 #b00 #b000000) `(fmov ,(S Rd) ,(S Rn))]
       [(0 0 #b00 #b000001) `(fabs ,(S Rd) ,(S Rn))]
       [(0 0 #b00 #b000010) `(fneg ,(S Rd) ,(S Rn))]
@@ -1363,7 +1783,23 @@
   ;; C4.6.29
   (define-encoding (conv-fp<->fx pc instr (31 sf) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b0))
                                  (20 rmode) (18 opcode) (15 scale) (9 Rn) (4 Rd))
-    (match (sf S type rmode opcode scale)))
+    (match (sf S type rmode opcode)
+      [(0 0 #b00 #b00 #b010) `(scvtf ,(S Rd) ,(W Rn) ,(fx- 64 scale))]
+      [(0 0 #b00 #b00 #b011) `(ucvtf ,(S Rd) ,(W Rn) ,(fx- 64 scale))]
+      [(0 0 #b00 #b11 #b000) `(fcvtzs ,(W Rd) ,(S Rn) ,(fx- 64 scale))]
+      [(0 0 #b00 #b11 #b001) `(fcvtzu ,(W Rd) ,(S Rn) ,(fx- 64 scale))]
+      [(0 0 #b01 #b00 #b010) `(scvtf ,(D Rd) ,(W Rn) ,(fx- 64 scale))]
+      [(0 0 #b01 #b00 #b011) `(ucvtf ,(D Rd) ,(W Rn) ,(fx- 64 scale))]
+      [(0 0 #b01 #b11 #b000) `(fcvtzs ,(W Rd) ,(D Rn) ,(fx- 64 scale))]
+      [(0 0 #b01 #b11 #b001) `(fcvtzu ,(W Rd) ,(D Rn) ,(fx- 64 scale))]
+      [(1 0 #b00 #b00 #b010) `(scvtf ,(S Rd) ,(X Rn) ,(fx- 64 scale))]
+      [(1 0 #b00 #b00 #b011) `(ucvtf ,(S Rd) ,(X Rn) ,(fx- 64 scale))]
+      [(1 0 #b00 #b11 #b000) `(fcvtzs ,(X Rd) ,(S Rn) ,(fx- 64 scale))]
+      [(1 0 #b00 #b11 #b001) `(fcvtzu ,(X Rd) ,(S Rn) ,(fx- 64 scale))]
+      [(1 0 #b01 #b00 #b010) `(scvtf ,(D Rd) ,(X Rn) ,(fx- 64 scale))]
+      [(1 0 #b01 #b00 #b011) `(ucvtf ,(D Rd) ,(X Rn) ,(fx- 64 scale))]
+      [(1 0 #b01 #b11 #b000) `(fcvtzs ,(X Rd) ,(D Rn) ,(fx- 64 scale))]
+      [(1 0 #b01 #b11 #b001) `(fcvtzu ,(X Rd) ,(D Rn) ,(fx- 64 scale))]))
 
   ;; C4.6.30
   (define-encoding (conv-fp<->int pc instr (31 sf) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1))

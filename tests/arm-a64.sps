@@ -62,6 +62,7 @@
 (check (d #x721b783f) => '(tst w1 #xffffffef))
 (check (d #xf240097f) => '(tst x11 #x7))
 (check (d #xf251009f) => '(tst x4 #x800000000000))
+(check (d #x1e604008) => '(fmov d8 d0))
 
 (check (d #x90000141) => '(adrp x1 #x2c000))
 (check (d #x10000061) => '(adr x1 #x410c))
@@ -76,6 +77,15 @@
 (check (d #x1e220800) => '(fmul s0 s0 s2))
 (check (d #xfa401844) => '(ccmp x2 0 #x4 ne))
 (check (d #x93cbd086) => '(extr x6 x4 x11 52))
+(check (d #x0f3d0420) => '(sshr v0.2s v1.2s 3))
+(check (d #x1f422409) => '(fmadd d9 d0 d2 d9))
+(check (d #x4f000402) => '(movi v2.4s 0))
+(check (d #x4f0707e1) => '(movi v1.4s #xff))
+(check (d #x4e211ce5) => '(and v5.16b v7.16b v1.16b))
+(check (d #x0e6128f0) => '(xtn v16.4h v7.4s))
+(check (d #x4eb1b842) => '(addv s2 v2.4s))
+(check (d #x3c8104e5) => '(str q5 (mempost+ x7 16)))
+(check (d #x0e043c42) => '(umov w2 (ref v2.s 0)))
 
 ;; (check (d #x9b017f39) => '(mul x25 x25 x1))
 
@@ -109,6 +119,5 @@
            ((= imm8 #x100) errors))
        => '())
 
-
 (check-report)
-(exit (if (check-passed? 35) 0 1))
+(exit (if (check-passed? 45) 0 1))
