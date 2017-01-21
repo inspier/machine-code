@@ -157,7 +157,7 @@
 (check (d #x0d9f09e1) => '(st1 (ref (v1.b) 2) (mempost+ x15 1)))
 (check (d #x0d8e09e1) => '(st1 (ref (v1.b) 2) (mempost+ x15 x14)))
 
-;; Complete check of the floating-point constant decoding
+;;; Complete check of the floating-point constant decoding
 (check (do ((fp-constants
              '#(#(2.0   4.0  8.0  16.0 0.125     0.25     0.5     1.0)
                 #(2.125 4.25 8.5  17.0 0.1328125 0.265625 0.53125 1.0625)
@@ -186,6 +186,46 @@
                           (cons (list imm8 expect result) errors)))))
            ((= imm8 #x100) errors))
        => '())
+
+;;; Check that all instructions can be decoded without any crash.
+(define (make-all-instructions-port step)
+  (define id "all-32le-instructions")
+  (define instruction 0)
+  (define shift 0)
+  (define (next-byte)
+    (when (eqv? shift 32)
+      (set! shift 0)
+      (set! instruction (+ instruction step)))
+    (let ((byte (bitwise-and (bitwise-arithmetic-shift-right instruction shift) #xff)))
+      (set! shift (fx+ shift 8))
+      byte))
+  (define (read! bytevector start count)
+    (if (> instruction #xffffffff)
+        0
+        (do ((i 0 (+ i 1))
+             (k start (+ k 1)))
+            ((or (> instruction #xffffffff) (= i count)) count)
+          (bytevector-u8-set! bytevector k (next-byte)))))
+  (define get-position #f)
+  (define set-position! #f)
+  (define close #f)
+  (make-custom-binary-input-port id read! get-position set-position! close))
+
+(display "Disassembling (almost) all instructions... ")
+(let* ((step 256)
+       (p (make-all-instructions-port step)))
+  (let lp ((i 0))
+    (when (eqv? (bitwise-and i (- (expt 2 29) 1)) 0)
+      (display (list (div (* i 100) #xffffffff) '%))
+      (flush-output-port (current-output-port)))
+    (unless (port-eof? p)
+      (guard (con
+              ((invalid-opcode? con) #t))
+        (get-instruction p #f #x4100))
+      (lp (+ i step)))))
+(newline)
+
+;;;
 
 (check-report)
 (exit (if (check-passed? 112) 0 1))
