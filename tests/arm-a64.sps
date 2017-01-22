@@ -204,7 +204,7 @@
         0
         (do ((i 0 (+ i 1))
              (k start (+ k 1)))
-            ((or (> instruction #xffffffff) (= i count)) count)
+            ((or (> instruction #xffffffff) (= i count)) i)
           (bytevector-u8-set! bytevector k (next-byte)))))
   (define get-position #f)
   (define set-position! #f)
