@@ -78,6 +78,7 @@
 
   (define-syntax define-encoding
     (lambda (x)
+      (define debug #f)
       (define (get-next-top-bit top-bit field-spec*)
         (syntax-case field-spec* ()
           [() -1]
@@ -98,14 +99,28 @@
                       [(select pc instruction)
                        #'err]
                       [(select pc instruction option option* ...)
-                       #`(or (option pc instruction)
-                             #,(f #'(select pc instruction option* ...)))]
+                       (if debug
+                           #`(let ((x (option pc instruction))
+                                   (y (guard (exn ((invalid-opcode? exn) #f))
+                                        #,(f #'(select pc instruction option* ...)))))
+                               (if (and x y)
+                                   (error 'name "Indistinct encoding" pc instruction x y)
+                                   (or x y)))
+                           #`(or (option pc instruction)
+                                 #,(f #'(select pc instruction option* ...))))]
                       [(match (field* ...))
                        #'err]
                       [(match (field* ...) [(value* ...) expr*] . k*)
-                       #`(if (and (field-eqv? field* value*) ...)
-                             expr*
-                             #,(f #'(match (field* ...) . k*)))]))))))
+                       (if debug
+                           #`(let ((x (and (field-eqv? field* value*) ...))
+                                   (y (guard (exn ((invalid-opcode? exn) #f))
+                                        #,(f #'(match (field* ...) . k*)))))
+                               (if (and x y)
+                                   (error 'name "Indistinct encoding" expr* y)
+                                   (if x expr* y)))
+                           #`(if (and (field-eqv? field* value*) ...)
+                                 expr*
+                                 #,(f #'(match (field* ...) . k*))))]))))))
       (syntax-case x ()
         [(_ (encoding-name pc instruction field-spec* ...))
          #'(define-encoding (encoding-name pc instruction field-spec* ...)

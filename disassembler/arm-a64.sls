@@ -464,10 +464,10 @@
   ;; C4.3.5
   (define-encoding (test&branch/imm pc instr (31 b5) (30 (= #b011011)) (24 op) (23 b40) (18 imm14) (4 Rt))
     (match (b5 op)
-      [(0 0) `(tbz ,(W Rt) ,b40 (pc-rel pc ,(fxasl imm14 2)))]
-      [(1 0) `(tbz ,(X Rt) ,(fxior (fxasl 1 6) b40) (pc-rel pc ,(fxasl imm14 2)))]
-      [(0 1) `(tbnz ,(W Rt) ,b40 (pc-rel pc ,(fxasl imm14 2)))]
-      [(1 1) `(tbnz ,(X Rt) ,(fxior (fxasl 1 6) b40) (pc-rel pc ,(fxasl imm14 2)))]))
+      [(0 0) `(tbz ,(W Rt) ,b40 ,(pc-rel pc (fxasl imm14 2)))]
+      [(1 0) `(tbz ,(X Rt) ,(fxior (fxasl 1 6) b40) ,(pc-rel pc (fxasl imm14 2)))]
+      [(0 1) `(tbnz ,(W Rt) ,b40 ,(pc-rel pc (fxasl imm14 2)))]
+      [(1 1) `(tbnz ,(X Rt) ,(fxior (fxasl 1 6) b40) ,(pc-rel pc (fxasl imm14 2)))]))
 
   ;; C4.3.6
   (define-encoding (uncond-branch/imm pc instr (31 op) (30 (= #b00101)) (25 imm26))
@@ -1751,8 +1751,8 @@
     (match (Q* op2 len op)
       [(0 #b00 'bxx 0) `(tbl ,(V Rd 8 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 8 'B))]
       [(1 #b00 'bxx 0) `(tbl ,(V Rd 16 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 16 'B))]
-      [(0 #b00 'bxx 0) `(tbx ,(V Rd 8 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 8 'B))]
-      [(1 #b00 'bxx 0) `(tbx ,(V Rd 16 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 16 'B))]))
+      [(0 #b00 'bxx 1) `(tbx ,(V Rd 8 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 8 'B))]
+      [(1 #b00 'bxx 1) `(tbx ,(V Rd 16 'B) ,(V-list Rn (fxand (fx+ Rn len) 31) 16 'B) ,(V Rm 16 'B))]))
 
   ;; C4.6.15
   (define-encoding (adv-simd-3-diff pc instr (31 (= #b0)) (30 Q*) (29 U) (28 (= #b01110)) (23 size) (21 (= #b1))
