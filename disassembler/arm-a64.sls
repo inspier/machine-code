@@ -149,18 +149,18 @@
     (assert (fx<=? 0 n-first 31))
     (assert (fx<=? 0 n-last 31))
     (cond ((eqv? n-first n-last)
-           `(,(%V% n-first lanes size)))
+           `(list ,(%V% n-first lanes size)))
           ((fx=? (fx- n-first 1) n-last) ; [n+1, n] ≡ [0, 31] mod 32.
-           `(,(%V% 0 lanes size) ,(%V% 31 lanes size)))
+           `(list ,(%V% 0 lanes size) ,(%V% 31 lanes size)))
           ((and (fx<? n-first n-last) (fx=? (fx- n-last n-first) 1))
-           `(,(%V% n-first lanes size) ,(%V% n-last lanes size)))
+           `(list ,(%V% n-first lanes size) ,(%V% n-last lanes size)))
           ((and (fx<? n-first n-last) (fx>=? (fx- n-last n-first) 2))
-           `(,(%V% n-first lanes size) - ,(%V% n-last lanes size)))
+           `(list ,(%V% n-first lanes size) - ,(%V% n-last lanes size)))
           (else
            (let ((last (if (fx<? n-first n-last) n-last (fx+ n-last 32))))
              (do ((n n-first (fx+ n 1))
                   (reg* '() (cons (%V% (fxand n #x1f) lanes size) reg*)))
-                 ((fx>? n last) (reverse reg*)))))))
+                 ((fx>? n last) `(list ,@(reverse reg*))))))))
 
   (define (V-list n-first n-last lanes size)
     ;; Vector register lists contain all registers from n-first to
