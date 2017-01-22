@@ -177,7 +177,11 @@
     `(ref ,(%V-list% n (fxand (fx+ n (fx- k 1)) 31) #f size) ,element))
 
   ;; Control registers
-  (define (C n) `(C ,n FIXME))
+  (define C-registers
+    '#(c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17
+          c18 c19 c20 c21 c22 c23 c24 c25 c26 c27 c28 c29 c30 c31))
+  (define (C n)
+    (vector-ref C-registers n))
 
   ;; System registers defined in (machine-code disassembler arm-aarch64).
   (define (system-reg op0 op1 crn crm op2)
@@ -449,7 +453,7 @@
       [(0 #b00 #b011 #b0011 'bxxxx #b100 #b11111) `(dsb ,CRm)] ;TODO: aliases
       [(0 #b00 #b011 #b0011 'bxxxx #b101 #b11111) `(dmb ,CRm)] ;TODO: aliases
       [(0 #b00 #b011 #b0011 'bxxxx #b110 #b11111) `(isb ,(case CRm ((#b1111) 'SY) (else CRm)))]
-      [(0 #b01 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(sys ,op1 (C CRn) ,(C CRm) ,op2 ,Rt)] ;TODO: aliases
+      [(0 #b01 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(sys ,op1 ,(C CRn) ,(C CRm) ,op2 ,Rt)] ;TODO: aliases
       [(0 'b1x 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(msr ,(system-reg op0 op1 CRn CRm op2) ,(X Rt))]
       [(1 #b01 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(sysl ,(X Rt) ,op1 ,(C CRn) ,(C CRm) ,op2)]
       [(1 'b1x 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(mrs ,(X Rt) ,(system-reg op0 op1 CRn CRm op2))]))
