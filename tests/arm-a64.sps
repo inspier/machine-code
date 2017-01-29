@@ -139,7 +139,6 @@
 (check (d #x5fa21820) => '(fmla s0 s1 (ref v2.s 3)))
 (check (d #x5fc21820) => '(fmla d0 d1 (ref v2.d 1)))
 
-
 (check (d #x0c002000) => '(st1 (list v0.8b - v3.8b) (mem+ x0)))
 (check (d #x0c9f2000) => '(st1 (list v0.8b - v3.8b) (mempost+ x0 32)))
 (check (d #x0c812000) => '(st1 (list v0.8b - v3.8b) (mempost+ x0 x1)))
@@ -156,6 +155,16 @@
 (check (d #x4d00a454) => '(st3 (ref (list v20.d - v22.d) 1) (mem+ x2)))
 (check (d #x0d9f09e1) => '(st1 (ref (list v1.b) 2) (mempost+ x15 1)))
 (check (d #x0d8e09e1) => '(st1 (ref (list v1.b) 2) (mempost+ x15 x14)))
+
+(check (d #x1e222020) => '(fcmp s1 s2))
+(check (d #x1e202068) => '(fcmp s3 0.0))
+(check (d #x1e652080) => '(fcmp d4 d5))
+(check (d #x1e6020c8) => '(fcmp d6 0.0))
+(check (d #x1e2820f0) => '(fcmpe s7 s8))
+(check (d #x1e202138) => '(fcmpe s9 0.0))
+(check (d #x1e6b2150) => '(fcmpe d10 d11))
+(check (d #x1e602198) => '(fcmpe d12 0.0))
+
 
 ;;; Complete check of the floating-point constant decoding
 (check (do ((fp-constants
@@ -228,4 +237,4 @@
 ;;;
 
 (check-report)
-(exit (if (check-passed? 112) 0 1))
+(exit (if (check-passed? 120) 0 1))

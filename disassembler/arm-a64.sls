@@ -420,10 +420,23 @@
 
   ;; C4.3.2
   (define-encoding (cond-branch/imm pc instr (31 (= #b0101010)) (24 o1) (23 imm19) (4 o0) (3 cond*))
-    (match (o1 o0)
-      [(0 0)
-       `(,(string->symbol (string-append "b." (symbol->string (condition-code cond*))))
-         ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]))
+    (match (o1 o0 cond*)
+      [(0 0 #b0000) `(b.eq ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0001) `(b.ne ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0010) `(b.cs ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0011) `(b.cc ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0100) `(b.mi ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0101) `(b.pl ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0110) `(b.vs ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b0111) `(b.vc ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1000) `(b.hi ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1001) `(b.ls ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1010) `(b.ge ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1011) `(b.lt ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1100) `(b.gt ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1101) `(b.le ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1110) `(b.al ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]
+      [(0 0 #b1111) `(b.nv ,(pc-rel pc (fxasl (sign-extend imm19 19) 2)))]))
 
   ;; C4.3.3
   (define-encoding (exception pc instr (31 (= #b11010100)) (23 opc) (20 imm16) (4 op2) (1 LL))
@@ -440,7 +453,7 @@
   ;; C4.3.4
   (define-encoding (system pc instr (31 (= #b1101010100)) (21 L) (20 op0) (18 op1) (15 CRn) (11 CRm) (7 op2) (4 Rt))
     (match (L op0 op1 CRn CRm op2 Rt)
-      [(0 #b00 'bxxx #b0100 'bxxxx 'bxxx #b11111) (msr/immediate pc instr)]
+      [(0 #b00 'bxxx #b0100 'bxxxx 'bxxx #b11111) `(msr ,(op1:op2->pstate-field op1 op2) ,CRm)]
       [(0 #b00 #b011 #b0010 (!= #b0000) 'bxxx #b11111) `(hint ,(fxior (fxasl CRm 3) op2))]
       [(0 #b00 #b011 #b0010 #b0000 #b000 #b11111) `(nop)]
       [(0 #b00 #b011 #b0010 #b0000 #b001 #b11111) `(yield)]
@@ -458,12 +471,12 @@
       [(1 #b01 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(sysl ,(X Rt) ,op1 ,(C CRn) ,(C CRm) ,op2)]
       [(1 'b1x 'bxxx 'bxxxx 'bxxxx 'bxxx 'bxxxxx) `(mrs ,(X Rt) ,(system-reg op0 op1 CRn CRm op2))]))
 
-  (define-encoding (msr/immediate pc instr (31 (= #b1101010100000)) (18 op1) (15 (= #b0100)) (11 CRm) (7 op2)
-                                  (4 (= #b11111)))
-    (match (op1 op2)
-      [(#b000 #b101) `(msr SPSel ,CRm)]
-      [(#b011 #b110) `(msr DAIFSet ,CRm)]
-      [(#b011 #b111) `(msr DAIFClr ,CRm)]))
+  (define (op1:op2->pstate-field op1 op2)
+    (case (fxior (fxasl op1 3) op2)
+      [(#b000101) 'SPSel]
+      [(#b011110) 'DAIFSet]
+      [(#b011111) 'DAIFClr]
+      (else (raise-UD "Reserved PSTATE field encoding" op1 op2))))
 
   ;; C4.3.5
   (define-encoding (test&branch/imm pc instr (31 b5) (30 (= #b011011)) (24 op) (23 b40) (18 imm14) (4 Rt))
@@ -2225,33 +2238,17 @@
       [(#b00 #b00010) `(sha256su0 ,(V Rd 4 'S) ,(V Rn 4 'S))]))
 
   ;; C4.6.22
-  (define-encoding (fp-compare pc instr (31 M) (30 (= #b0)) (29 S) (28 (= #b11110)) (23 type) (21 (= #b1)) (20 Rm)
+  (define-encoding (fp-compare pc instr (31 M) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1)) (20 Rm)
                                (15 op) (13 (= #b1000)) (9 Rn) (4 opcode2))
-    (match (M S type op opcode2)
-      [(0 0 #b00 #b00 #b00000) (fcmp pc instr)]
-      [(0 0 #b00 #b00 #b01000) (fcmp pc instr)]
-      [(0 0 #b00 #b00 #b10000) (fcmpe pc instr)]
-      [(0 0 #b00 #b00 #b11000) (fcmpe pc instr)]
-      [(0 0 #b01 #b00 #b00000) (fcmp pc instr)]
-      [(0 0 #b01 #b00 #b01000) (fcmp pc instr)]
-      [(0 0 #b01 #b00 #b10000) (fcmpe pc instr)]
-      [(0 0 #b01 #b00 #b11000) (fcmpe pc instr)]))
-
-  (define-encoding (fcmp pc instr (31 (= #b00011110)) (23 type) (21 (= #b1)) (20 Rm) (15 (= #b001000))
-                         (9 Rn) (4 opc) (2 (= #b000)))
-    (match (type opc Rm)
-      [(#b00 #b00 'bxxxxx) `(fcmp ,(S Rn) ,(S Rm))]
-      [(#b00 #b01 #b00000) `(fcmp ,(S Rn) #i0.0)]
-      [(#b01 #b00 'bxxxxx) `(fcmp ,(D Rn) ,(D Rm))]
-      [(#b01 #b01 #b00000) `(fcmp ,(D Rn) #i0.0)]))
-
-  (define-encoding (fcmpe pc instr (31 (= #b00011110)) (23 type) (21 (= #b1)) (20 Rm) (15 (= #b001000))
-                          (9 Rn) (4 opc) (2 (= #b000)))
-    (match (type opc Rm)
-      [(#b00 #b10 'bxxxxx) `(fcmpe ,(S Rn) ,(S Rm))]
-      [(#b00 #b11 #b00000) `(fcmpe ,(S Rn) #i0.0)]
-      [(#b01 #b10 'bxxxxx) `(fcmpe ,(D Rn) ,(D Rm))]
-      [(#b01 #b11 #b00000) `(fcmpe ,(D Rn) #i0.0)]))
+    (match (M S* type Rm op opcode2)
+      [(0 0 #b00 'bxxxxx #b00 #b00000) `(fcmp ,(S Rn) ,(S Rm))]
+      [(0 0 #b00 #b00000 #b00 #b01000) `(fcmp ,(S Rn) #i0.0)]
+      [(0 0 #b00 'bxxxxx #b00 #b10000) `(fcmpe ,(S Rn) ,(S Rm))]
+      [(0 0 #b00 #b00000 #b00 #b11000) `(fcmpe ,(S Rn) #i0.0)]
+      [(0 0 #b01 'bxxxxx #b00 #b00000) `(fcmp ,(D Rn) ,(D Rm))]
+      [(0 0 #b01 #b00000 #b00 #b01000) `(fcmp ,(D Rn) #i0.0)]
+      [(0 0 #b01 'bxxxxx #b00 #b10000) `(fcmpe ,(D Rn) ,(D Rm))]
+      [(0 0 #b01 #b00000 #b00 #b11000) `(fcmpe ,(D Rn) #i0.0)]))
 
   ;; C4.6.23
   (define-encoding (fp-cond-compare pc instr (31 M) (30 (= #b0)) (29 S*) (28 (= #b11110)) (23 type) (21 (= #b1))
