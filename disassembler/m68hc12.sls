@@ -190,7 +190,7 @@
 
   (define (get-memory xb port collect)
     (define (lookup-xysp reg)
-      (case reg ((#b00) 'x) ((#b01) 'y) ((#b10) 'sp) ((#b11) 'pc)))
+      (case reg ((#b00) 'x) ((#b01) 'y) ((#b10) 'sp) (else 'pc)))
     (cond ((xb-indexed-indirect? xb)
            ;; 16-bit offset indexed-indirect (points to a pointer).
            (list (list (get-u16/collect port collect 'disp)
@@ -217,7 +217,8 @@
                  (aa (case (fxbit-field xb 0 2)
                        ((#b00) 'a)
                        ((#b01) 'b)
-                       ((#b10) 'd))))
+                       ((#b10) 'd)
+                       (else (raise-UD "Invalid accumulator offset")))))
              (list aa rr)))
 
           ((xb-5bit-constant-offset? xb)
@@ -237,7 +238,10 @@
                  (reg (lookup-xysp (fxbit-field xb 6 8))))
              (if (fxbit-set? xb 3)
                  (list (if (fxbit-set? xb 4) 'post- 'pre-) (- 9 disp) reg)
-                 (list (if (fxbit-set? xb 4) 'post+ 'pre+) disp reg))))))
+                 (list (if (fxbit-set? xb 4) 'post+ 'pre+) disp reg))))
+
+          (else
+           (raise-UD "Undefined memory encoding" xb))))
 
   (define (get-instruction port collect pc)
     (define (get-operand am)
@@ -308,7 +312,7 @@
                              ((#b100) 'd)
                              ((#b101) 'x)
                              ((#b110) 'y)
-                             ((#b111) 'sp)))
+                             (else 'sp)))
                       (op (case (fxbit-field lb 5 8)
                             ((0) 'dbeq)
                             ((1) 'dbne)

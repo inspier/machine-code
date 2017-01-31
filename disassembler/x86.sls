@@ -161,7 +161,7 @@
                     ((#b00) (prefix-set vex))
                     ((#b01) (prefix-set vex operand))
                     ((#b10) (prefix-set vex repz))
-                    ((#b11) (prefix-set vex repnz)))
+                    (else (prefix-set vex repnz)))
                   (if (= mode 64) (prefix-set rex) (prefix-set))))))
 
   (define (VEX2->prefixes prefixes mode byte1)
@@ -177,7 +177,7 @@
                     ((#b00) (prefix-set vex))
                     ((#b01) (prefix-set vex operand))
                     ((#b10) (prefix-set vex repz))
-                    ((#b11) (prefix-set vex repnz)))
+                    (else (prefix-set vex repnz)))
                   (if (= mode 64) (prefix-set rex) (prefix-set))))))
 
   (define (lookahead-is-valid-VEX? port)
@@ -395,21 +395,20 @@ operand is an opcode extension."
             ((32) (if (enum-set-member? (prefix rex.b) prefixes)
                       '(xchg r8d eax)
                       (nop)))
-            ((64) (if (enum-set-member? (prefix rex.b) prefixes)
+            (else (if (enum-set-member? (prefix rex.b) prefixes)
                       '(xchg r8 rax)
                       '(xchg rax rax)))))
          ((16)
           (case operand-size
             ((16) (nop))
-            ((32) '(xchg eax eax))))))
+            (else '(xchg eax eax))))))
       ((bndmk bndldx bndstx)
        ;; The reg-reg versions of these instructions are (nop Ev).
        (if (and (symbol? (cadr instruction))
                 (symbol? (caddr instruction)))
            '(nop)                       ;discard the operand
            instruction))
-      (else
-       instruction)))
+      (else instruction)))
 
   (define (fix-rIP-relative instruction ip limiter)
     ;; Fixes the vectors created by rIP-relative. The rIP-relative
@@ -429,7 +428,7 @@ operand is an opcode extension."
         `(+ ,(case mode
                ((16) 'ip)
                ((32) 'eip)
-               ((64) 'rip))
+               (else 'rip))
             ,offset)))
 
 ;;; Instruction stream decoding
@@ -451,21 +450,22 @@ translate-displacement."
                      (list (vector-ref regs register)))))
           ((#b01) (list (vector-ref regs register)
                         (get-s8/collect port collect limiter (tag disp))))
-          ((#b10) (list (vector-ref regs register)
-                        (get-s32/collect port collect limiter (tag disp))))))
+          (else (list (vector-ref regs register)
+                      (get-s32/collect port collect limiter (tag disp))))))
+      (define (mem16 )
+        (let ((addr16 '#((bx si) (bx di) (bp si) (bp di) (si) (di) (bp) (bx))))
+          (case mod
+            ((#b00) (if (fx=? r/m #b110)
+                        (list (get-s16/collect port collect limiter (tag disp)))
+                        (vector-ref addr16 r/m)))
+            ((#b01) (append (vector-ref addr16 r/m)
+                            (list (get-s8/collect port collect limiter (tag disp)))))
+            (else (append (vector-ref addr16 r/m)
+                            (list (get-s16/collect port collect limiter (tag disp))))))))
       (if (fx=? mod #b11)
           r/m                           ;register operand
           (if (fx=? address-size 16)
-              (let ((addr16 '#((bx si) (bx di) (bp si) (bp di)
-                               (si) (di) (bp) (bx))))
-                (case mod
-                  ((#b00) (if (fx=? r/m #b110)
-                              (list (get-s16/collect port collect limiter (tag disp)))
-                              (vector-ref addr16 r/m)))
-                  ((#b01) (append (vector-ref addr16 r/m)
-                                  (list (get-s8/collect port collect limiter (tag disp)))))
-                  ((#b10) (append (vector-ref addr16 r/m)
-                                  (list (get-s16/collect port collect limiter (tag disp)))))))
+              (mem16)
               (let ((regs (if (fx=? address-size 64) reg-names64 reg-names32))
                     (sib (and (fx=? (ModR/M-r/m modr/m) #b100)
                               (get-u8/collect port collect limiter (tag sib)))))
@@ -637,7 +637,7 @@ translate-displacement."
                (case operand-size
                  ((16) (bitwise-ior #xff00 byte))
                  ((32) (bitwise-ior #xffffff00 byte))
-                 ((64) (bitwise-ior #xffffffffffffff00 byte)))
+                 (else (bitwise-ior #xffffffffffffff00 byte)))
                byte)))
         ((Iw) (get-u16/collect port collect limiter (tag immediate)))
         ((Id) (get-u32/collect port collect limiter (tag immediate)))
@@ -645,13 +645,13 @@ translate-displacement."
          ((case operand-size
             ((16) get-u16/collect)
             ((32) get-u32/collect)
-            ((64) get-u64/collect))
+            (else get-u64/collect))
           port collect limiter (tag immediate)))
         ((Iz)
          (case operand-size
            ((16) (get-u16/collect port collect limiter (tag immediate)))
            ((32) (get-u32/collect port collect limiter (tag immediate)))
-           ((64)
+           (else
             (let ((imm (get-u32/collect port collect limiter (tag immediate))))
               (if (bitwise-bit-set? imm 31)
                   (bitwise-ior #xffffffff00000000 imm)
@@ -662,22 +662,22 @@ translate-displacement."
                ((case address-size
                   ((16) get-u16/collect)
                   ((32) get-u32/collect)
-                  ((64) get-u64/collect))
+                  (else get-u64/collect))
                 port collect limiter (tag disp))))
         ((Ov)
          ;; FIXME: is this correct?
          (list (case operand-size
                  ((16) 'mem16+)
                  ((32) 'mem32+)
-                 ((64) 'mem64+))
+                 (else 'mem64+))
                ((case address-size
                   ((16) get-u16/collect)
                   ((32) get-u32/collect)
-                  ((64) get-u64/collect))
+                  (else get-u64/collect))
                 port collect limiter (tag disp))))
         ;; Far pointer
         ((Ap)
-         (let* ((off (if (= operand-size 32)
+         (let* ((off (if (eqv? operand-size 32)
                          (get-u32/collect port collect limiter (tag disp))
                          (get-u16/collect port collect limiter (tag disp))))
                 (ss (get-u16/collect port collect limiter (tag disp))))
@@ -689,49 +689,49 @@ translate-displacement."
            (case address-size
              ((16) `(mem8+ ,seg si))
              ((32) (if seg `(mem8+ ,seg esi) '(mem8+ esi)))
-             ((64) (if seg `(mem8+ ,seg rsi) '(mem8+ rsi))))))
+             (else (if seg `(mem8+ ,seg rsi) '(mem8+ rsi))))))
         ((Xv)
          (let ((seg (prefixes->segment-override prefixes mode 'ds))
                (size (case operand-size
                        ((16) 'mem16+)
                        ((32) 'mem32+)
-                       ((64) 'mem64+))))
+                       (else 'mem64+))))
            (case address-size
              ((16) `(,size ,seg si))
              ((32) (if seg `(,size ,seg esi) `(,size esi)))
-             ((64) (if seg `(,size ,seg rsi) `(,size rsi))))))
+             (else (if seg `(,size ,seg rsi) `(,size rsi))))))
         ((Xz)
          (let ((seg (prefixes->segment-override prefixes mode 'ds))
                (size (case operand-size
                        ((16) 'mem16+)
-                       ((32 64) 'mem32+))))
+                       (else 'mem32+))))
            (case address-size
              ((16) `(,size ,seg si))
              ((32) (if seg `(,size ,seg esi) `(,size esi)))
-             ((64) (if seg `(,size ,seg rsi) `(,size rsi))))))
+             (else (if seg `(,size ,seg rsi) `(,size rsi))))))
 
         ((Yb)
          (case address-size
            ((16) '(mem8+ es di))
            ((32) (if (= mode 64) '(mem8+ edi) '(mem8+ es edi)))
-           ((64) '(mem8+ rdi))))
+           (else '(mem8+ rdi))))
         ((Yv)
          (let ((size (case operand-size
                        ((16) 'mem16+)
                        ((32) 'mem32+)
-                       ((64) 'mem64+))))
+                       (else 'mem64+))))
            (case address-size
              ((16) `(,size es di))
              ((32) (if (= mode 64) `(,size edi) `(,size es edi)))
-             ((64) `(,size rdi)))))
+             (else `(,size rdi)))))
         ((Yz)
          (let ((size (case operand-size
                        ((16) 'mem16+)
-                       ((32 64) 'mem32+))))
+                       (else 'mem32+))))
            (case address-size
              ((16) `(,size es di))
              ((32) (if (= mode 64) `(,size edi) `(,size es edi)))
-             ((64) `(,size rdi)))))
+             (else `(,size rdi)))))
 
         ;; Special registers
         ((Cd/q) (vector-ref reg-names-creg (ModR/M-reg modr/m prefixes)))
@@ -797,18 +797,18 @@ translate-displacement."
         ((Kpd Kps Kss Ksd)
          (needs-VEX prefixes)
          (translate-displacement prefixes mode
-                                 (fxbit-field /is4 4 (if (= mode 64) 8 7))
+                                 (fxbit-field /is4 4 (if (eqv? mode 64) 8 7))
                                  'xmm))
         ((Lo)
          (needs-VEX prefixes)
          (translate-displacement (enum-set-difference prefixes (prefix-set vex.l))
                                  mode
-                                 (fxbit-field /is4 4 (if (= mode 64) 8 7))
+                                 (fxbit-field /is4 4 (if (eqv? mode 64) 8 7))
                                  'xmm))
         ((Lx)
          (needs-VEX prefixes)
          (translate-displacement prefixes mode
-                                 (fxbit-field /is4 4 (if (= mode 64) 8 7))
+                                 (fxbit-field /is4 4 (if (eqv? mode 64) 8 7))
                                  'xmm))
 
         ((KWpd) (if (enum-set-member? (prefix rex.w) prefixes)
@@ -874,18 +874,20 @@ translate-displacement."
                                  (case operand-size
                                    ((16) 'ptr16)
                                    ((32) 'ptr32)
-                                   ((64) 'ptr64))))
-        ((Ma)
+                                   (else 'ptr64))))
+        ((Ma)                           ;only for BOUND
          (translate-displacement prefixes mode disp
                                  'notreg
                                  (case operand-size
                                    ((16) 32)
-                                   ((32) 64))))
+                                   ((32) 64)
+                                   (else
+                                    (raise-UD "Internal error: Ma used in 64-bit mode")))))
 
         ((Rd/q)
          ;; 64-bit general register in long mode, 32-bit in legacy.
          (translate-displacement prefixes mode disp
-                                 (if (= mode 16) 32 mode) 'notmem))
+                                 (if (eqv? mode 16) 32 mode) 'notmem))
         ((Rv/Mw) (translate-displacement prefixes mode disp operand-size 16))
         ((Rd/Mw) (translate-displacement prefixes mode disp 32 16))
         ((Rd/Mb) (translate-displacement prefixes mode disp 32 8))
@@ -897,7 +899,7 @@ translate-displacement."
          (translate-displacement prefixes mode (ModR/M-r/m opcode prefixes) 8))
         ((*eCX *eDX *eBX *eSP *eBP *eSI *eDI)
          (translate-displacement prefixes mode (ModR/M-r/m opcode prefixes)
-                                 (if (= operand-size 16) 16 32)))
+                                 (if (eqv? operand-size 16) 16 32)))
 
         ;; x87
         ((*st0) 'st0)
@@ -912,14 +914,14 @@ translate-displacement."
         ((*SS) 'ss)
         ((*DX) 'dx)
         ((*CL) 'cl)
-        ((*eAX) (if (= operand-size 16) 'ax 'eax))
+        ((*eAX) (if (eqv? operand-size 16) 'ax 'eax))
         ((*AX) 'ax)
         ((*AL) 'al)
         ((*rAX)
          (case operand-size
            ((16) 'ax)
            ((32) 'eax)
-           ((64) 'rax)))
+           (else 'rax)))
         ((*XMM0) 'xmm0)
         (else
          (error 'get-operand "Unimplemented opsyntax" op)))))
@@ -932,14 +934,14 @@ translate-displacement."
                                        (else 32)))
                            ((32) (cond ((enum-set-member? (prefix operand) prefixes) 16)
                                        (else 32)))
-                           ((16) (cond ((enum-set-member? (prefix operand) prefixes) 32)
+                           (else (cond ((enum-set-member? (prefix operand) prefixes) 32)
                                        (else 16)))))
            (address-size (case mode
                            ((64) (cond ((enum-set-member? (prefix address) prefixes) 32)
                                        (else 64)))
                            ((32) (cond ((enum-set-member? (prefix address) prefixes) 16)
                                        (else 32)))
-                           ((16) (cond ((enum-set-member? (prefix address) prefixes) 32)
+                           (else (cond ((enum-set-member? (prefix address) prefixes) 32)
                                        (else 16)))))
            (modr/m (or modr/m (and (has-modr/m? instr)
                                    (get-u8/collect port collect limiter (tag modr/m)))))
@@ -1088,7 +1090,7 @@ translate-displacement."
                                ((32)
                                 (cond ((enum-set-member? (prefix operand) prefixes) 1)
                                       (else 2)))
-                               ((16)
+                               (else
                                 (cond ((enum-set-member? (prefix operand) prefixes) 2)
                                       (else 1)))))
                  modr/m opcode
@@ -1100,7 +1102,7 @@ translate-displacement."
                              (case mode
                                ((64) (if (enum-set-member? (prefix address) prefixes) 2 3))
                                ((32) (if (enum-set-member? (prefix address) prefixes) 1 2))
-                               ((16) (if (enum-set-member? (prefix address) prefixes) 2 1))))
+                               (else (if (enum-set-member? (prefix address) prefixes) 2 1))))
                  modr/m opcode
                  prefixes
                  opcode-collected vex-traversed d64))
@@ -1108,7 +1110,7 @@ translate-displacement."
             ((eq? (vector-ref instr 0) 'Mode)
              ;; Choose between compatibility/legacy mode and
              ;; long mode.
-             (lp (vector-ref instr (if (= mode 64) 2 1))
+             (lp (vector-ref instr (if (eqv? mode 64) 2 1))
                  modr/m opcode
                  prefixes
                  opcode-collected vex-traversed d64))
@@ -1132,7 +1134,7 @@ translate-displacement."
                (collect (tag opcode) opcode)
                (collect (tag modr/m) modr/m)
                (lp (vector-ref instr
-                               (cond ((= (ModR/M-mod modr/m) #b11) 2) ;register
+                               (cond ((eqv? (ModR/M-mod modr/m) #b11) 2) ;register
                                      (else 1)))
                    modr/m opcode
                    prefixes
@@ -1194,6 +1196,7 @@ translate-displacement."
   ;; argument is a type tag, and the following arguments are bytes.
   ;; All bytes read from the port will be passed to the collector.
   (define (get-instruction port mode collect ip)
+    (assert (memv mode '(16 32 64)))
     (let ((collect (or collect (lambda x #f))))
       (let ((limiter
              (let ((have-read 0))

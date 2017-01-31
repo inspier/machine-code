@@ -165,27 +165,25 @@
                       ((defop (name operand operand-size mode
                                     (encoding opsize-prefix?))
                          test ...)
-                       (unless (memq (syntax->datum #'encoding)
-                                     '(#f reg r/m implicit-r/m
-                                          destZ destB
-                                          seg:off mem
-                                          imm imm8 imm16 immZ))
-                         (syntax-violation 'defop "Bad encoding" x #'encoding))
+                       (memq (syntax->datum #'encoding)
+                             '(#f reg r/m implicit-r/m destZ destB seg:off mem imm imm8 imm16 immZ))
                        ;; The first entry in the vector is
                        ;; 'operand-size if the operand is capable of
                        ;; sizing an instruction, so that the right
                        ;; operand size override can be emitted.
                        #'(define unused
-                           (hashtable-set! tmp 'name
-                                           (vector 'opsize-prefix?
-                                                   (lambda (operand operand-size mode)
-                                                     test ...)
-                                                   'encoding
-                                                   'name))))
+                           (begin
+                             (hashtable-set! tmp 'name
+                                             (vector 'opsize-prefix?
+                                                     (lambda (operand operand-size mode)
+                                                       test ...)
+                                                     'encoding
+                                                     'name))
+                             #f)))
                       ((defop (name operand)
                          test ...)
                        #'(defop (name operand operand-size mode (#f #f))
-                           test ...))))))
+                                test ...))))))
         ;; Segment registers
         (defop (Sw o opsize mode (reg #f))
           (and (register? o) (eq? (register-type o) 'sreg)))
@@ -267,7 +265,7 @@
           (and (register? o)
                (case mode
                  ((32 64) (eqv? (register-type o) mode))
-                 ((16) (eqv? (register-type o) 32)))))
+                 (else (eqv? (register-type o) 32)))))
 
         ;; General purpose register or memory
         (defop (Ev o opsize mode (r/m operand-size))
@@ -926,7 +924,7 @@
                   (case (assembler-state-mode state)
                     ((32 64)
                      (vector (or value 0) 32))
-                    ((16)
+                    (else
                      (vector (or value 0) 16))))
                  ((destB)
                   (trace "DESTB!!")
@@ -948,7 +946,7 @@
                     (bytevector-u16-set! bv 4 (far-pointer-seg operand)
                                          (endianness little))
                     bv))
-                 ((16)
+                 (else
                   (let ((bv (make-bytevector (+ 2 2))))
                     (bytevector-u16-set! bv 0 (or offset 0) (endianness little))
                     (bytevector-u16-set! bv 2 (far-pointer-seg operand)
@@ -1120,7 +1118,9 @@
                   ((%u16) 16)
                   ((%u32) 32)
                   ((%u64) 64)
-                  ((%u128) 128))))
+                  ((%u128) 128)
+                  (else
+                   (error 'put-immediate "Unknown type" imm type state)))))
       (cond ((bytevector? imm)
              (put-bytevector (assembler-state-port state) imm))
             ((expression? imm)

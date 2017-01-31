@@ -266,7 +266,8 @@
           ((#b00) `(lsl ,reg ,amount))
           ((#b01) `(lsr ,reg ,amount))
           ((#b10) `(asr ,reg ,amount))
-          ((#b11) `(ror ,reg ,amount)))))
+          ((#b11) `(ror ,reg ,amount))
+          (else (raise-UD "Invalid op in decode-shift" op reg amount)))))
 
   (define (decode-shift/no-ror op reg amount)
     (case op
@@ -293,7 +294,7 @@
                     (else #f)))
           (policy (case (fxand n #b1)
                     ((#b0) "KEEP")
-                    ((#b1) "STRM"))))
+                    (else "STRM"))))
       (if (and type target policy)
           (string->symbol (string-append type target policy))
           n)))

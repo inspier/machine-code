@@ -146,15 +146,10 @@
           ((= machine EM-68HC12) 'm68hc12)
           ((= machine EM-MIPS) (if (= endianness ELFDATA2LSB) 'mipsel 'mipsbe))
           (else
-           (display "No support for this architecture: ")
-           (cond ((assv machine elf-machine-names) =>
-                  (lambda (n) (display (cdr n))))
-                 (else
-                  (display "Unknown architecture (")
-                  (display machine)
-                  (display ")")))
-           (newline)
-           (exit)))))
+           (error 'elf-architecture-symbol
+                  "No support for this architecture"
+                  (cond ((assv machine elf-machine-names) => cdr)
+                        (else machine)))))))
 
 ;; Returns a list of (start-addr end-addr symbol) in increasing order.
 (define (parse-elf-symbols image)

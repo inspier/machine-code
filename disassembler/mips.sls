@@ -153,7 +153,9 @@
                                     (bitwise-bit-field encoding 0 16)))
                    ((code) (bitwise-bit-field encoding 16 26))
                    ((cct) (fccreg (bitwise-bit-field encoding 18 21)))
-                   ((ccd) (fccreg (bitwise-bit-field encoding 8 11)))))
+                   ((ccd) (fccreg (bitwise-bit-field encoding 8 11)))
+                   (else
+                    (raise-UD "Internal error: unknown operand" op instr encoding))))
                (cdr instr))))
 
   (define (encoding-opcode x) (bitwise-bit-field x 26 32))
@@ -220,7 +222,7 @@
                                 ((0) "f")
                                 ((1) "t")
                                 ((2) "fl")
-                                ((3) "fl"))))
+                                (else "fl"))))
                             '(label))))
                  ((16)
                   (cond ((zero? z)

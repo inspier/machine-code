@@ -98,7 +98,7 @@ EOF
     Vicare)
         (
             # wget https://github.com/marcomaggi/vicare/archive/master.tar.gz -O vicare.tar.gz
-            wget https://bitbucket.org/marcomaggi/vicare-scheme/downloads/vicare-scheme-0.4d0pre5.tar.xz -O vicare.tar.xz
+            wget https://bitbucket.org/marcomaggi/vicare-scheme/downloads/vicare-scheme-0.4d1.tar.xz -O vicare.tar.xz
             mkdir vicare && tar -C vicare --strip-components 1 -xaf vicare.tar.xz
             cd vicare
             # sh autogen.sh

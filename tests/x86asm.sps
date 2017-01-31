@@ -55,7 +55,8 @@
            (get-instruction port mode
                             (lambda (_ . bytes)
                               (set! bytes-returned (+ (length bytes)
-                                                      bytes-returned)))
+                                                      bytes-returned))
+                              #f)
                             #f)))
       (unless (eof-object? (lookahead-u8 port))
         (error 'round-trip "After disassembly there are bytes unread."
