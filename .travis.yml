@@ -1,23 +1,31 @@
 # Test with these Schemes.
 env:
   matrix:
-    - SCHEME="ChezScheme"
-    - SCHEME="Guile"
-    - SCHEME="Racket"
-    - SCHEME="Sagittarius"
-    - SCHEME="Vicare"
+    - SCHEME="ChezScheme_master"
+    - SCHEME="Guile_preinstalled"
+    - SCHEME="Larceny"
+    - SCHEME="Racket_6.2"
+    - SCHEME="Racket_HEAD"
+    - SCHEME="SagittariusScheme"
+    - SCHEME="VicareScheme"
+
+matrix:
+  allow_failures:
+    - env: SCHEME="Larceny"
+  fast_finish: true
 
 addons:
   apt:
     packages:
-      - racket
       - guile-2.0
-      # For Sagittarius
+      # For Vicare
+      - libgmp-dev
+      # Sagittarius
       - libgc-dev
       - zlib1g-dev
       - libffi-dev
-      # For Vicare
-      - libgmp-dev
+      # For Larceny
+      - libc6:i386
 
 language: c
 
@@ -30,7 +38,10 @@ compiler:
   - gcc
 
 before_script:
-  - set -o pipefail && eval "$(./build-scheme.sh $SCHEME)"
+  # Install scheme-ci
+  - wget https://github.com/weinholt/scheme-ci/archive/master.zip -O scheme-ci-master.zip
+  - unzip scheme-ci-master.zip
+  - eval "$(scheme-ci-master/install-scheme.sh $SCHEME)"
 
 script:
   - ./run-tests.sh
