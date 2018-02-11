@@ -2008,7 +2008,7 @@
       ((#b010) (V n 2 'S))
       ((#b011) (V n 4 'S))
       ((#b101) (V n 1 'D))
-      ((#b101) (V n 2 'D))
+      ((#b111) (V n 2 'D))
       (else
        (raise-UD "Reserved vector arrangement in size:Q->V/HSD" n size Q))))
 
