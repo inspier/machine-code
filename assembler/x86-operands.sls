@@ -603,7 +603,7 @@
           (error 'build-expression "Bad rip-relative assembler operand" op))
         (for-each check-syntax (cdr op))))
     (check-syntax op)
-    (if (and (pair? op) (eqv? (cadr op) '(eip rip)))
+    (if (and (pair? op) (memq (cadr op) '(eip rip)))
         (make-expression mode (if (eq? (cadr op) 'rip) 64 32)
                          #t (caddr op))
         (make-expression mode #f #f (or (eval-expr op mode empty-hashtable)

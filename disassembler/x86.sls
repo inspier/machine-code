@@ -521,6 +521,7 @@ translate-displacement."
                       ((64) 'mem128+)
                       (else 'mem64+)))
                    ((ptr16) 'mem16:16+)
+                   ((ptr24) 'mem16:24+)
                    ((ptr32) 'mem16:32+)
                    ((ptr64) 'mem16:64+)
                    ((generic) 'mem+)
@@ -855,7 +856,12 @@ translate-displacement."
          (translate-displacement prefixes mode vex.v (max 32 operand-size)))
 
         ;; These must be memory references
-        ((M Ms) (translate-displacement prefixes mode disp 'notreg 'generic))
+        ((M) (translate-displacement prefixes mode disp 'notreg 'generic))
+        ((Ms) (translate-displacement prefixes mode disp 'notreg
+                                      (case operand-size
+                                        ((16) 'ptr24)
+                                        ((32) 'ptr32)
+                                        (else 'ptr64))))
         ((Mb) (translate-displacement prefixes mode disp 'notreg 8))
         ((Mw) (translate-displacement prefixes mode disp 'notreg 16))
         ((Md) (translate-displacement prefixes mode disp 'notreg 32))

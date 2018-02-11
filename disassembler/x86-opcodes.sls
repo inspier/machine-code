@@ -1680,7 +1680,7 @@
        (mov Ev Gv)
        (mov Gb Eb)
        (mov Gv Ev)
-       (mov Ev Sw)
+       (mov Ew Sw)
        (lea Gv M)
        (mov Sw Ew)
        #(Group "Group 1A"               ;Three byte XOP prefix
