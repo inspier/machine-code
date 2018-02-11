@@ -25,5 +25,7 @@ if [ "x$SCHEME" != "xSagittariusScheme" ]; then
     # Disabled in Sagittarius for now due to bad performance.
     programs/fcdisasm -b 32 x86-demo.image | grep -5 rep
     programs/fcdisasm -b 32 x86-linux-demo.image
-    tests/arm-a64.sps
+    if [ "x$SCHEME" == "xChezScheme" ]; then
+        tests/arm-a64.sps
+    fi
 fi

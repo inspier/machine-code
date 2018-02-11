@@ -1,0 +1,8 @@
+#!r6rs ; -*- mode: scheme; coding: utf-8 -*-
+(import (akku format manifest))
+
+(akku-package ("machine-code" "2.0.0")
+  (synopsis "Assembler for x86, ELF reader, various disassemblers")
+  (authors "Göran Weinholt <goran@weinholt.se>")
+  (license "MIT")
+  (depends ("struct-pack" "^1.0.0")))

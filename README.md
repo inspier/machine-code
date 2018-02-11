@@ -26,27 +26,22 @@ Documentation is sparse.
 
 ## Installation
 
-First you need a Scheme. Any [R6RS Scheme](http://www.r6rs.org/)
-implementation should work.
-
-Clone the repository (or extract the archive):
-```bash
-git clone https://github.com/weinholt/machine-code
-```
-
-The `machine-code` directory should be under a directory in your Scheme
-library path. Example for Chez Scheme:
+With [Akku.scm](https://github.com/weinholt/akku/releases):
 
 ```bash
-export CHEZSCHEMELIBDIRS=$PWD:$CHEZSCHEMELIBDIRS
+$ akku install machine-code
+$ source .akku/bin/activate
 ```
+
+Otherwise refer to your Scheme implementation's documentation on using
+R6RS libraries.
 
 ## Usage
 
 Try the fcdisasm program (the real output has color):
 
 ```bash
-$ programs/fcdisasm /bin/ls | head
+$ fcdisasm /bin/ls | head
 ELF image detected. Looking for .text section...
   4028A0: 4157                           (push r15)
   4028A2: 4156                           (push r14)
@@ -93,8 +88,7 @@ address.
 Contributions are very welcome as long as they are relevant to the
 goals stated at the top of this file, and licensed under the MIT
 license. Bug fixes, new libaries and tools are all welcome. External
-dependencies in the base libraries should be kept to a minimum, but
-are generally okay in the programs and in specialized libraries.
+dependencies must be managed with Akku.scm.
 
 ## Contact
 

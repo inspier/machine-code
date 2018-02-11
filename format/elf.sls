@@ -1,116 +1,100 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2008, 2009, 2010, 2011, 2012, 2016, 2017 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2012, 2016, 2017, 2018 Göran Weinholt <goran@weinholt.se>
 ;; SPDX-License-Identifier: MIT
-
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
 #!r6rs
 
 ;; Routines for reading the Executable and Linkable Format (ELF)
 
 (library (machine-code format elf)
-  (export is-elf-image?
-          open-elf-image
+  (export
+    is-elf-image?
+    open-elf-image
 
-          make-elf-image elf-image?
-          elf-image-port elf-image-word-size elf-image-endianness
-          elf-image-os-abi elf-image-abi-version elf-image-type
-          elf-image-machine elf-image-version elf-image-entry
-          elf-image-phoff elf-image-shoff elf-image-flags
-          elf-image-ehsize elf-image-phentsize elf-image-phnum
-          elf-image-shentsize elf-image-shnum elf-image-shstrndx
+    make-elf-image elf-image?
+    elf-image-port elf-image-word-size elf-image-endianness
+    elf-image-os-abi elf-image-abi-version elf-image-type
+    elf-image-machine elf-image-version elf-image-entry
+    elf-image-phoff elf-image-shoff elf-image-flags
+    elf-image-ehsize elf-image-phentsize elf-image-phnum
+    elf-image-shentsize elf-image-shnum elf-image-shstrndx
 
-          make-elf-section elf-section?
-          elf-section-name elf-section-type elf-section-flags
-          elf-section-addr elf-section-offset elf-section-size
-          elf-section-link elf-section-info elf-section-addralign
-          elf-section-entsize
+    make-elf-section elf-section?
+    elf-section-name elf-section-type elf-section-flags
+    elf-section-addr elf-section-offset elf-section-size
+    elf-section-link elf-section-info elf-section-addralign
+    elf-section-entsize
 
-          make-elf-segment elf-segment?
-          elf-segment-type elf-segment-flags elf-segment-offset
-          elf-segment-vaddr elf-segment-paddr elf-segment-filesz
-          elf-segment-memsz elf-segment-align
+    make-elf-segment elf-segment?
+    elf-segment-type elf-segment-flags elf-segment-offset
+    elf-segment-vaddr elf-segment-paddr elf-segment-filesz
+    elf-segment-memsz elf-segment-align
 
-          make-elf-symbol elf-symbol?
-          elf-symbol-name elf-symbol-other elf-symbol-shndx
-          elf-symbol-value elf-symbol-size elf-symbol-binding
-          elf-symbol-type elf-symbol-info
+    make-elf-symbol elf-symbol?
+    elf-symbol-name elf-symbol-other elf-symbol-shndx
+    elf-symbol-value elf-symbol-size elf-symbol-binding
+    elf-symbol-type elf-symbol-info
 
-          elf-image-section-by-name
-          elf-image-sections
-          elf-image-segments
-          elf-image-symbols
+    elf-image-section-by-name
+    elf-image-sections
+    elf-image-segments
+    elf-image-symbols
 
-          make-string-table string-table? string-table-empty?
-          string-table-size string-table-bytes
-          string-table-list-index string-table-byte-index
+    make-string-table string-table? string-table-empty?
+    string-table-size string-table-bytes
+    string-table-list-index string-table-byte-index
 
-          ELF-MAGIC
+    ELF-MAGIC
 
-          ;; elf-image-word-size, elf-image-endianness
-          ELFCLASS32 ELFCLASS64 ELFDATA2LSB ELFDATA2MSB
+    ;; elf-image-word-size, elf-image-endianness
+    ELFCLASS32 ELFCLASS64 ELFDATA2LSB ELFDATA2MSB
 
-          ;; elf-image-type
-          ET-NONE ET-REL ET-EXEC ET-DYN ET-CORE
-          ET-LOOS ET-HIOS ET-LOPROC ET-HIPROC
+    ;; elf-image-type
+    ET-NONE ET-REL ET-EXEC ET-DYN ET-CORE
+    ET-LOOS ET-HIOS ET-LOPROC ET-HIPROC
 
-          ;; elf-image-version
-          EV-CURRENT
+    ;; elf-image-version
+    EV-CURRENT
 
-          ;; elf-image-os-abi
-          ELFOSABI-SYSV ELFOSABI-HPUX ELFOSABI-NETBSD ELFOSABI-LINUX
-          ELFOSABI-SOLARIS ELFOSABI-AIX ELFOSABI-IRIX ELFOSABI-FREEBSD
-          ELFOSABI-TRU64 ELFOSABI-MODESTO ELFOSABI-OPENBSD ELFOSABI-OPENVMS
-          ELFOSABI-NSK ELFOSABI-AROS
+    ;; elf-image-os-abi
+    ELFOSABI-SYSV ELFOSABI-HPUX ELFOSABI-NETBSD ELFOSABI-LINUX
+    ELFOSABI-SOLARIS ELFOSABI-AIX ELFOSABI-IRIX ELFOSABI-FREEBSD
+    ELFOSABI-TRU64 ELFOSABI-MODESTO ELFOSABI-OPENBSD ELFOSABI-OPENVMS
+    ELFOSABI-NSK ELFOSABI-AROS
 
-          ;; elf-image-machine
-          EM-NONE EM-M32 EM-SPARC EM-386 EM-68K EM-88K EM-860
-          EM-MIPS EM-MIPS-RS3-LE EM-PARISC EM-SPARC32PLUS EM-PPC
-          EM-PPC64 EM-S390 EM-ARM EM-SPARCV9 EM-IA-64 EM-68HC12
-          EM-X86-64 EM-68HC11 EM-AARCH6
-          elf-machine-names
+    ;; elf-image-machine
+    EM-NONE EM-M32 EM-SPARC EM-386 EM-68K EM-88K EM-860
+    EM-MIPS EM-MIPS-RS3-LE EM-PARISC EM-SPARC32PLUS EM-PPC
+    EM-PPC64 EM-S390 EM-ARM EM-SPARCV9 EM-IA-64 EM-68HC12
+    EM-X86-64 EM-68HC11 EM-AARCH6
+    elf-machine-names
 
-          ;; elf-section-type, elf-section-link, elf-section-info
-          SHT-NULL SHT-PROGBITS SHT-SYMTAB SHT-STRTAB SHT-RELA SHT-HASH
-          SHT-DYNAMIC SHT-NOTE SHT-NOBITS SHT-REL SHT-SHLIB SHT-DYNSYM
-          SHT-LOOS SHT-HIOS SHT-LOPROC SHT-HIPROC
+    ;; elf-section-type, elf-section-link, elf-section-info
+    SHT-NULL SHT-PROGBITS SHT-SYMTAB SHT-STRTAB SHT-RELA SHT-HASH
+    SHT-DYNAMIC SHT-NOTE SHT-NOBITS SHT-REL SHT-SHLIB SHT-DYNSYM
+    SHT-LOOS SHT-HIOS SHT-LOPROC SHT-HIPROC
 
-          ;; elf-section-flags
-          SHF-WRITE SHF-ALLOC SHF-EXECINSTR SHF-MASKOS SHF-MASKPROC
+    ;; elf-section-flags
+    SHF-WRITE SHF-ALLOC SHF-EXECINSTR SHF-MASKOS SHF-MASKPROC
 
-          SHN-UNDEF SHN-ABS SHN-COMMON
+    SHN-UNDEF SHN-ABS SHN-COMMON
 
-          ;; elf-segment-type
-          PT-NULL PT-LOAD PT-DYNAMIC PT-INTERP PT-NOTE PT-PHDR
-          PT-LOPROC PT-HIPROC
+    ;; elf-segment-type
+    PT-NULL PT-LOAD PT-DYNAMIC PT-INTERP PT-NOTE PT-PHDR
+    PT-LOPROC PT-HIPROC
 
-          ;; elf-segment-flags bitfield
-          PF-R PF-W PF-X PF-MASKOS PF-MASKPROC
+    ;; elf-segment-flags bitfield
+    PF-R PF-W PF-X PF-MASKOS PF-MASKPROC
 
-          ;; elf-symbol-binding
-          STB-LOCAL STB-GLOBAL STB-WEAK
-          STB-LOOS STB-HIOS STB-LOPROC STB-HIPROC
+    ;; elf-symbol-binding
+    STB-LOCAL STB-GLOBAL STB-WEAK
+    STB-LOOS STB-HIOS STB-LOPROC STB-HIPROC
 
-          ;; elf-symbol-type
-          STT-NOTYPE STT-OBJECT STT-FUNC STT-SECTION STT-FILE
-          STT-LOOS STT-HIOS STT-LOPROC STT-HIPROC)
-  (import (rnrs)
-          (machine-code struct pack))
+    ;; elf-symbol-type
+    STT-NOTYPE STT-OBJECT STT-FUNC STT-SECTION STT-FILE
+    STT-LOOS STT-HIOS STT-LOPROC STT-HIPROC)
+  (import
+    (rnrs (6))
+    (struct pack))
 
 ;;; Utilities
 
