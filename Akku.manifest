@@ -3,6 +3,9 @@
 
 (akku-package ("machine-code" "2.0.0")
   (synopsis "Assembler for x86, ELF reader, various disassemblers")
+  (description "Includes an assembler for x86 capable of producing ELF binaries."
+               "Disassemblers for arm a64, i8080, m68hc12, mips and x86 (all modes)."
+               "And a library for reading ELF files.")
   (authors "Göran Weinholt <goran@weinholt.se>")
   (license "MIT")
   (depends ("struct-pack" "^1.0.0")))

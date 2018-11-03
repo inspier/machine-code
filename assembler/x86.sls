@@ -1,6 +1,6 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
 ;; Assembler for the Intel x86-16/32/64 instruction set.
-;; Copyright © 2008, 2009, 2010, 2011, 2012, 2014, 2015, 2016, 2017, 2018 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008-2012, 2014-2018 Göran Weinholt <goran@weinholt.se>
 ;; SPDX-License-Identifier: MIT
 #!r6rs
 
@@ -155,19 +155,27 @@
                        ;; 'operand-size if the operand is capable of
                        ;; sizing an instruction, so that the right
                        ;; operand size override can be emitted.
-                       #'(define unused
-                           (begin
-                             (hashtable-set! tmp 'name
-                                             (vector 'opsize-prefix?
-                                                     (lambda (operand operand-size mode)
-                                                       test ...)
-                                                     'encoding
-                                                     'name))
-                             #f)))
+                       #'(define name
+                           (let ((x (vector 'opsize-prefix?
+                                            (lambda (operand operand-size mode)
+                                              test ...)
+                                            'encoding
+                                            'name)))
+                             (hashtable-set! tmp 'name x)
+                             x)))
                       ((defop (name operand)
                          test ...)
                        #'(defop (name operand operand-size mode (#f #f))
-                                test ...))))))
+                                test ...)))))
+           (defalias (lambda (x)
+                       (syntax-case x ()
+                         ((_ name aliased-name ...)
+                          #'(begin
+                              (define aliased-name
+                                (begin
+                                  (hashtable-set! tmp 'aliased-name name)
+                                  name))
+                              ...))))))
         ;; Segment registers
         (defop (Sw o opsize mode (reg #f))
           (and (register? o) (eq? (register-type o) 'sreg)))
@@ -268,6 +276,14 @@
           (cond ((register? o) (eqv? (register-type o) 32))
                 ((memory? o) (memv (memory-datasize o) '(#f 32)))
                 (else #f)))
+        (defop (Eq o opsize mode (r/m #f))
+          (cond ((register? o) (memv (register-type o) '(64)))
+                ((memory? o) (memv (memory-datasize o) '(#f 64)))
+                (else #f)))
+        (defop (Ed/q o opsize mode (r/m operand-size))
+          (cond ((register? o) (memv (register-type o) '(32 64)))
+                ((memory? o) (memv (memory-datasize o) '(#f 32 64)))
+                (else #f)))
 
         ;; Memory
         (defop (Mdq o opsize mode (mem #f))
@@ -356,16 +372,18 @@
         ;; XMM registers
         (defop (Vdq o opsize mode (reg #f))
           (and (register? o) (eq? (register-type o) 'xmm)))
-        (defop (Vpd o opsize mode (reg #f))
+        (defop (Vps o opsize mode (reg #f))
           (and (register? o) (eq? (register-type o) 'xmm)))
+        (defalias Vps Vss Vpd Vsd)
         (defop (Wdq o opsize mode (r/m #f))
           (cond ((register? o) (eq? (register-type o) 'xmm))
                 ((memory? o) (memv (memory-datasize o) '(#f 128)))
                 (else #f)))
-        (defop (Wpd o opsize mode (r/m #f))
+        (defop (Wps o opsize mode (r/m #f))
           (cond ((register? o) (eq? (register-type o) 'xmm))
                 ((memory? o) (memv (memory-datasize o) '(#f 128)))
                 (else #f)))
+        (defalias Wps Wss Wpd Wsd)
 
         ;; Immediates
         (defop (Iz o opsize mode (immZ #f))

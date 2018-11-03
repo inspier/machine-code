@@ -200,6 +200,10 @@
 
 (test '(addpd xmm14 xmm15) 64)
 (test '(addpd xmm0 (mem128+ r14)) 64)
+(test '(cvtsi2ss xmm1 rax) 64)
+(test '(movq rdx xmm1) 64)
+(test '(movd xmm1 eax) 64)
+(test '(ucomiss xmm1 xmm2) 64)
 
 ;;; VEX
 
