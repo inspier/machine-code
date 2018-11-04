@@ -263,4 +263,4 @@
 ;; (mov (mem+ #xff00ff00ffffffff) rax)
 
 (check-report)
-(exit (if (check-passed? 106) 0 1))
+(exit (if (check-passed? 110) 0 1))
