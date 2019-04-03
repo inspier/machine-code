@@ -1,5 +1,5 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
-;; Copyright © 2008, 2009, 2010, 2011, 2012, 2017, 2018 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2012, 2017, 2018, 2019 Göran Weinholt <goran@weinholt.se>
 ;; SPDX-License-Identifier: MIT
 #!r6rs
 
@@ -577,7 +577,7 @@
 
   (define (build-expression op mode)
     (define (check-syntax op)
-      ;; FIXME: use better syntax checking... or use EVAL?
+      ;; FIXME: use better syntax checking
       (when (pair? op)
         ;;              (unless (and (memq (car op) '(+ -)) (>= (length op) 2))
         ;;                (error 'build-expression "Bad assembler operand" op))
@@ -662,6 +662,4 @@
           ((memory? op)
            (expression-labels (memory-expr op)))
           (else
-           '())))
-
-  )
+           '()))))

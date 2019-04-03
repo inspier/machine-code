@@ -1,6 +1,6 @@
 ;; -*- mode: scheme; coding: utf-8 -*-
 ;; Assembler for the Intel x86-16/32/64 instruction set.
-;; Copyright © 2008-2012, 2014-2018 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008-2012, 2014-2019 Göran Weinholt <goran@weinholt.se>
 ;; SPDX-License-Identifier: MIT
 #!r6rs
 
@@ -14,7 +14,20 @@
 
 ;; Quite a few details of 16-bit mode have been left out.
 
-;; And by the way, it's not really ready to be used.
+;;; Terminology
+
+;; opsyntax - "operand syntax", a symbol signfifying a type of
+;;            operand, e.g. Ib for immediate byte. These generally
+;;            come from the Intel SDM.
+
+;; os - operand size, e.g. 32-bit for 32-bit instruction operands
+;; as - address size, e.g. 64-bit for 32-bit addressing
+
+;; dos - default operand size, implicit to an instruction
+;; eos - effective operand size, may be different due to prefixes
+
+;; ModR/M, SIB, disp - parts of the addressing modes of the x86
+;; REX - prefix that allows access to all 16 registers, etc
 
 ;;; TODO
 
@@ -86,6 +99,15 @@
       (and i (list (substring s 0 i)
                    (substring s (+ 1 i) (string-length s))))))
 
+  (define (hashtable=? x y)
+    (and (eqv? (hashtable-size x) (hashtable-size y))
+         (let-values ([(keys values) (hashtable-entries x)])
+           (let lp ((i 0))
+             (cond ((fx=? i (vector-length keys)) #t)
+                   ((equal? (vector-ref values i) (hashtable-ref y (vector-ref keys i) #f))
+                    (lp (fx+ i 1)))
+                   (else #f))))))
+
 ;;; Constants etc
 
   (define-record-type assembler-state
@@ -141,41 +163,48 @@
          (register-index (memory-base mem))))
 
   ;; Operand syntax predicates.
-  (define opsyntaxen
+  (define opsyntaxen)
+
+  (define (init-opsyntax)
     (let ((tmp (make-eq-hashtable)))
-      (let-syntax
-          ((defop (lambda (x)
-                    (syntax-case x ()
-                      ((defop (name operand operand-size mode
-                                    (encoding opsize-prefix?))
-                         test ...)
-                       (memq (syntax->datum #'encoding)
-                             '(#f reg r/m implicit-r/m destZ destB seg:off mem imm imm8 imm16 immZ))
-                       ;; The first entry in the vector is
-                       ;; 'operand-size if the operand is capable of
-                       ;; sizing an instruction, so that the right
-                       ;; operand size override can be emitted.
-                       #'(define name
-                           (let ((x (vector 'opsize-prefix?
-                                            (lambda (operand operand-size mode)
-                                              test ...)
-                                            'encoding
-                                            'name)))
-                             (hashtable-set! tmp 'name x)
-                             x)))
-                      ((defop (name operand)
-                         test ...)
-                       #'(defop (name operand operand-size mode (#f #f))
-                                test ...)))))
-           (defalias (lambda (x)
-                       (syntax-case x ()
-                         ((_ name aliased-name ...)
-                          #'(begin
-                              (define aliased-name
-                                (begin
-                                  (hashtable-set! tmp 'aliased-name name)
-                                  name))
-                              ...))))))
+      (let-syntax ((defop
+                    (lambda (x)
+                      (syntax-case x ()
+                        ;; Define an instruction encoding. The test
+                        ;; checks if the instruction matches the
+                        ;; encoding.
+                        ((defop (name operand operand-size mode
+                                      (encoding opsize-prefix?))
+                           test ...)
+                         (memq (syntax->datum #'encoding)
+                               '(#f reg r/m implicit-r/m destZ destB
+                                    seg:off mem imm imm8 imm16 immZ))
+                         ;; The first entry in the vector is
+                         ;; 'operand-size if the operand is capable of
+                         ;; sizing an instruction, so that the right
+                         ;; operand size override can be emitted.
+                         #'(define name
+                             (let ((x (vector 'opsize-prefix?
+                                              (lambda (operand operand-size mode)
+                                                test ...)
+                                              'encoding
+                                              'name)))
+                               (hashtable-set! tmp 'name x)
+                               x)))
+                        ((defop (name operand)
+                           test ...)
+                         #'(defop (name operand operand-size mode (#f #f))
+                             test ...)))))
+                   (defalias
+                    (lambda (x)
+                      (syntax-case x ()
+                        ((_ name aliased-name ...)
+                         #'(begin
+                             (define aliased-name
+                               (begin
+                                 (hashtable-set! tmp 'aliased-name name)
+                                 name))
+                             ...))))))
         ;; Segment registers
         (defop (Sw o opsize mode (reg #f))
           (and (register? o) (eq? (register-type o) 'sreg)))
@@ -441,15 +470,12 @@
         (defop (Dd/q o opsize mode (reg #f))
           (and (register? o) (eqv? (register-type o) 'dreg)))
 
-        tmp)))
+        (set! opsyntaxen tmp))))
 
   (define (translate-opsyntax opsyntax)
     (let ((o (hashtable-ref opsyntaxen opsyntax #f)))
       (unless o
         (print "Unimplemented opsyntax: " opsyntax))
-      ;;       (unless o
-      ;;         (error 'translate-opsyntax "Unimplemented operand syntax" opsyntax))
-      ;;       o
       (or o opsyntax)))
 
   (define (opsyntax-default-segment=? opsyntax seg)
@@ -483,71 +509,71 @@
      ((list? instr)
       (f instr (reverse bytes)))
 
-     ((eq? (vector-ref instr 0) 'Group)
-      (letrec ((walk-modr/m-table
-                (lambda (table mod)
-                  (vector-for-each
-                   (lambda (i reg)
-                     (if (and (vector? i) (= (vector-length i) 8))
-                         (vector-for-each
-                          (lambda (i r/m)
-                            (walk-opcodes
-                             f i (cons (make-modr/m mod reg r/m)
-                                       bytes)))
-                          i
-                          '#(0 1 2 3 4 5 6 7))
-                         (walk-opcodes f i (cons (list 'mod/reg= mod reg) bytes))))
-                   table
-                   '#(0 1 2 3 4 5 6 7)))))
-        (walk-modr/m-table (vector-ref instr 2) #b00)
-        (if (> (vector-length instr) 3)
-            (walk-modr/m-table (vector-ref instr 3) #b11)
-            '())))
-
-     ((eq? (vector-ref instr 0) 'Prefix)
-      (walk-opcodes f (vector-ref instr 1) bytes)
-      (walk-opcodes f (vector-ref instr 2) (append bytes (list (list 'prefix #xF3))))
-      (walk-opcodes f (vector-ref instr 3) (append bytes (list (list 'prefix #x66))))
-      (walk-opcodes f (vector-ref instr 4) (append bytes (list (list 'prefix #xF2)))))
-
-     ((eq? (vector-ref instr 0) 'Datasize)
-      (walk-opcodes f (vector-ref instr 1) (append bytes (list 'data16)))
-      (walk-opcodes f (vector-ref instr 2) (append bytes (list 'data32)))
-      (walk-opcodes f (vector-ref instr 3) (append bytes (list 'data64))))
-
-     ((eq? (vector-ref instr 0) 'Addrsize)
-      (walk-opcodes f (vector-ref instr 2) (append bytes (list 'addr32)))
-      (walk-opcodes f (vector-ref instr 3) (append bytes (list 'addr64))))
-
-     ((eq? (vector-ref instr 0) 'Mode)
-      (walk-opcodes f (vector-ref instr 1) (append bytes (list 'legacy-mode)))
-      (walk-opcodes f (vector-ref instr 2) (append bytes (list 'long-mode))))
-
-     ((eq? (vector-ref instr 0) 'VEX)   ;FIXME: handle this
-      (walk-opcodes f (vector-ref instr (if (= (vector-length instr) 3) 2 3))
-                    (append bytes (list 'vex.256)))
-      (walk-opcodes f (vector-ref instr 2) (append bytes (list 'vex.128)))
-      (walk-opcodes f (vector-ref instr 1) bytes))
-
-     ((eq? (vector-ref instr 0) 'Mem/reg) ;FIXME: handle this
-      (walk-opcodes f (vector-ref instr 1) (append bytes (list 'mem)))
-      (walk-opcodes f (vector-ref instr 2) (append bytes (list 'reg))))
-
-     ((eq? (vector-ref instr 0) 'd64)
-      (walk-opcodes f (vector-ref instr 1) (append bytes (list 'd64))))
-
-     ((eq? (vector-ref instr 0) 'f64)
-      (walk-opcodes f (vector-ref instr 1) (append bytes (list 'f64))))
-
-     ;; Ignore future extensions to the opcode table.
-     ((symbol? (vector-ref instr 0))
-      #f)
-
      (else
-      (do ((index 0 (+ index 1)))
-          ((= index 256))
-        (walk-opcodes f (vector-ref instr index)
-                      (cons index bytes))))))
+      (case (vector-ref instr 0)
+        ((Group)
+         (letrec ((walk-modr/m-table
+                   (lambda (table mod)
+                     (vector-for-each
+                      (lambda (i reg)
+                        (if (and (vector? i) (= (vector-length i) 8))
+                            (vector-for-each
+                             (lambda (i r/m)
+                               (walk-opcodes
+                                f i (cons (make-modr/m mod reg r/m)
+                                          bytes)))
+                             i
+                             '#(0 1 2 3 4 5 6 7))
+                            (walk-opcodes f i (cons (list 'mod/reg= mod reg) bytes))))
+                      table
+                      '#(0 1 2 3 4 5 6 7)))))
+           (walk-modr/m-table (vector-ref instr 2) #b00)
+           (if (> (vector-length instr) 3)
+               (walk-modr/m-table (vector-ref instr 3) #b11)
+               '())))
+
+        ((Prefix)
+         (walk-opcodes f (vector-ref instr 1) bytes)
+         (walk-opcodes f (vector-ref instr 2) (append bytes (list (list 'prefix #xF3))))
+         (walk-opcodes f (vector-ref instr 3) (append bytes (list (list 'prefix #x66))))
+         (walk-opcodes f (vector-ref instr 4) (append bytes (list (list 'prefix #xF2)))))
+
+        ((Datasize)
+         (walk-opcodes f (vector-ref instr 1) (append bytes (list 'data16)))
+         (walk-opcodes f (vector-ref instr 2) (append bytes (list 'data32)))
+         (walk-opcodes f (vector-ref instr 3) (append bytes (list 'data64))))
+
+        ((Addrsize)
+         (walk-opcodes f (vector-ref instr 2) (append bytes (list 'addr32)))
+         (walk-opcodes f (vector-ref instr 3) (append bytes (list 'addr64))))
+
+        ((Mode)
+         (walk-opcodes f (vector-ref instr 1) (append bytes (list 'legacy-mode)))
+         (walk-opcodes f (vector-ref instr 2) (append bytes (list 'long-mode))))
+
+        ((VEX)                          ;FIXME: handle this
+         (walk-opcodes f (vector-ref instr (if (= (vector-length instr) 3) 2 3))
+                       (append bytes (list 'vex.256)))
+         (walk-opcodes f (vector-ref instr 2) (append bytes (list 'vex.128)))
+         (walk-opcodes f (vector-ref instr 1) bytes))
+
+        ((Mem/reg)                      ;FIXME: handle this
+         (walk-opcodes f (vector-ref instr 1) (append bytes (list 'mem)))
+         (walk-opcodes f (vector-ref instr 2) (append bytes (list 'reg))))
+
+        ((d64)
+         (walk-opcodes f (vector-ref instr 1) (append bytes (list 'd64))))
+
+        ((f64)
+         (walk-opcodes f (vector-ref instr 1) (append bytes (list 'f64))))
+
+        ;; Ignore future extensions to the opcode table.
+        (else
+         (unless (symbol? (vector-ref instr 0))
+           (do ((index 0 (+ index 1)))
+               ((= index 256))
+             (walk-opcodes f (vector-ref instr index)
+                           (cons index bytes)))))))))
 
   (define (template-opsyntax x)
     (vector-ref x 0))
@@ -615,7 +641,9 @@
 
 ;;; Instruction lookup
 
-  (define instructions
+  (define instructions)
+
+  (define (init-instructions)
     (let ((tmp (make-eq-hashtable)))
       (define (rough< x y)
         (define (rough-count-encoding a)
@@ -680,7 +708,7 @@
       (for-each (lambda (m)
                   (hashtable-set! tmp (car m) (hashtable-ref tmp (cdr m) #f)))
                 mnemonic-aliases)
-      tmp))
+      (set! instructions tmp)))
 
   (define pseudo-instructions
     (let ((tmp (make-eq-hashtable)))
@@ -793,24 +821,6 @@
                  (if (null? templates)
                      (try-pseudo #f)
                      (let ()
-                       ;; TODO: a better idea might be to enumerate
-                       ;; every possible way to encode each
-                       ;; instruction, i.e. all operand sizes with
-                       ;; operand size prefix included etc. Put all
-                       ;; this in a hashtable, where the key is the
-                       ;; mnemonic and how the operands could be
-                       ;; encoded. Pre-determine which encoding is the
-                       ;; most optimal for all combinations of
-                       ;; operands. Encoding an instruction is then
-                       ;; like dispatching a method in a rather
-                       ;; strange language with dispatching on
-                       ;; function types. Just translate the types of
-                       ;; the operands in the instruction and look it
-                       ;; up in the hashtable mentioned earlier. The
-                       ;; opsyntax table needs a list of example
-                       ;; operands that are acceptable as input, one
-                       ;; of each type. These can also be used in
-                       ;; documentation. And lookup is O(1).
                        (trace "% " operands)
                        (let lp ((templates templates))
                          (if (null? templates)
@@ -836,7 +846,6 @@
             (else (try-pseudo #t)))))
 
   (define (instruction-encodable? operands template mode os)
-    ;;        (print template)
     ;; This operand size and address size stuff is somewhat tricky,
     ;; and can likely be improved a lot. They are needed in order
     ;; to emit the right operand/address size override prefix. The
@@ -879,8 +888,7 @@
     ;; Finds the operand size for the instruction, which is used to
     ;; decide if an operand size override needs to be emitted and so
     ;; on. The operands and opsyntaxen have already been parsed.
-    (let ((sizes (filter (lambda (x)
-                           (memv x '(16 32 64)))
+    (let ((sizes (filter (lambda (x) (memv x '(16 32 64)))
                          (cons default (map operand-size operands opsyntaxen)))))
       (cond ((null? sizes) #f)
             (else
@@ -900,11 +908,8 @@
 
   (define (encode-operands! operands opsyntax os as state)
     ;; This function encodes only immediates and displacements.
-
     ;; FIXME: handle different operand sizes
-
     ;; FIXME: handle the sign extension stuff...
-
     (define (encode-operand! operand opsyntax)
       ;; return #(value bits) if ip-relative, bytevector if not.
       (cond ((expression? operand)
@@ -956,7 +961,6 @@
                     bv)))))
             (else #f)))
     (map encode-operand! operands opsyntax))
-
 
   ;; prefixes | opcode bytes | ModR/M | SIB | displacement | immediates
   ;; VEX | opcode | ModR/M | SIB | displacement | /is4 | immediates
@@ -1113,7 +1117,6 @@
                         (car operands)
                         (car opsyntax))))))))
 
-
   (define (put-immediate imm type state)
     (let ((size (case type
                   ((%u8) 8)
@@ -1196,8 +1199,6 @@
                    (trace "#;pad " pad)
                    (lp (- n pad)
                        (cons (vector-ref table pad) bvs))))))))
-
-
 
   (define (assemble! instr state)
     (trace "! " instr)
@@ -1343,11 +1344,6 @@
                                 (unless (hashtable-ref known-labels label #f)
                                   (error 'assembler "Unknown label" label)))
                               (hashtable-keys used-labels))
-             #;
-             (vector-for-each (lambda (label)
-                                (unless (hashtable-ref used-labels label #f)
-                                  (print "#;unused-label " label)))
-                              (hashtable-keys known-labels))
              (values (reverse ret) (reverse symbols)))
             (else
              (case (caar code)
@@ -1416,8 +1412,14 @@
                       (cons (cons (caar code) operands)
                             ret)))))))))
 
+  (define initialized #f)
+
   (define (assemble code)
     ;; (for-each (lambda (x) (write x) (newline)) code) (newline)
+    (unless initialized
+      (init-opsyntax)
+      (init-instructions)
+      (set! initialized #t))
     (let-values (((code symbols) (translate-operands-code code)))
       (let lp ((pass 0)
                (old-labels (make-eq-hashtable))
@@ -1425,20 +1427,14 @@
                                             (make-eq-hashtable)
                                             #f '() symbols)))
         (print "assembly pass: " pass)
-        (let-values (((tmpport extract) (open-bytevector-output-port)))
+        (let-values ([(tmpport extract) (open-bytevector-output-port)])
           (assembler-state-port-set! state tmpport)
           (for-each (lambda (i) (assemble! i state)) code)
           (let ((new-labels (assembler-state-labels state)))
             ;; Loop until all labels are known and they aren't
             ;; changing anymore.
             (cond ((or (assembler-state-relocs state)
-                       (exists (lambda (key)
-                                 (let ((nl (hashtable-ref new-labels key #f))
-                                       (ol (hashtable-ref old-labels key #f)))
-                                   (not (equal? nl ol))))
-                               (vector->list (hashtable-keys new-labels)))
-
-                       )
+                       (not (hashtable=? old-labels new-labels)))
                    (print ";Some labels are unknown or changed! Assembling again...")
                    (print ";Unknown labels? " (assembler-state-relocs state))
                    (lp (+ pass 1) (hashtable-copy new-labels)
@@ -1446,14 +1442,4 @@
                                              (assembler-state-labels state)
                                              #f '() symbols)))
                   (else
-                   ;; (print ";Symbol table:")
-                   ;; (vector-for-each
-                   ;;  (lambda (x) (print " '" (car x) " => #x"
-                   ;;                     (number->string (cdr x) 16)))
-                   ;;  newlabels)
-                   ;; (print ";Assembly complete.")
-                   (values (extract) (assembler-state-labels state)))))))))
-
-
-
-    )
+                   (values (extract) (assembler-state-labels state))))))))))

@@ -2,9 +2,6 @@
 
 [![Build Status](https://travis-ci.org/weinholt/machine-code.svg?branch=master)](https://travis-ci.org/weinholt/machine-code)
 
-Machine code is often hidden from view and difficult to work with.
-This project aims to lift the veil.
-
 This project is about the development of tools that relate to machine
 code and object formats; for all architectures.
 
@@ -26,7 +23,7 @@ Documentation is sparse.
 
 ## Installation
 
-With [Akku.scm](https://github.com/weinholt/akku/releases):
+With [Akku.scm](https://akkuscm.org):
 
 ```bash
 $ akku install machine-code
