@@ -280,4 +280,4 @@
        => #vu8(0 1 2 3 4 0 0 0))
 
 (check-report)
-(exit (if (check-passed? 110) 0 1))
+(exit (if (check-passed? 112) 0 1))

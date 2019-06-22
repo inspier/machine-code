@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 set -ex
 
-function cleanup {
+cleanup () {
   rm -f x86-demo.image x86-linux-demo.image
 }
 trap cleanup EXIT
@@ -23,9 +23,9 @@ esac
 
 if [ "x$SCHEME" != "xSagittariusScheme" ]; then
     # Disabled in Sagittarius for now due to bad performance.
-    programs/fcdisasm -b 32 x86-demo.image | grep -5 rep
-    programs/fcdisasm -b 32 x86-linux-demo.image
-    if [ "x$SCHEME" == "xChezScheme" ]; then
+    programs/fcdisasm.sps -b 32 x86-demo.image | grep -C 5 rep
+    programs/fcdisasm.sps -b 32 x86-linux-demo.image
+    if [ "x$SCHEME" = "xChezScheme" ]; then
         tests/arm-a64.sps
     fi
 fi
