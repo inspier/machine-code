@@ -1,7 +1,7 @@
 #!r6rs ; -*- mode: scheme; coding: utf-8 -*-
 (import (akku format manifest))
 
-(akku-package ("machine-code" "2.0.0")
+(akku-package ("machine-code" "2.1.0")
   (synopsis "Assembler for x86, ELF reader, various disassemblers")
   (description "Includes an assembler for x86 capable of producing ELF binaries."
                "Disassemblers for arm a64, i8080, m68hc12, mips and x86 (all modes)."

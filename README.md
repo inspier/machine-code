@@ -27,7 +27,7 @@ With [Akku.scm](https://akkuscm.org):
 
 ```bash
 $ akku install machine-code
-$ source .akku/bin/activate
+$ .akku/env
 ```
 
 Otherwise refer to your Scheme implementation's documentation on using
@@ -60,25 +60,9 @@ an operating mode). The *collect* procedure can be *#f*; otherwise it
 is called with groups of bytes that have been read from the
 instruction stream.
 
-## New in 2.0.0
+## Changelog
 
-### New disassembler for ARM A64 (used in AArch64, ARMv8)
-
-The new `(machine-code disassembler arm-a64)` library disassembles
-64-bit ARM code.
-
-### Generic disassembler library
-
-The new `(machine-code disassembler)` library provides an abstract
-interface to all current and future disassemblers.
-
-### Incompatible change
-
-The procedure signatures for all disassemblers has changed. An
-additional `pc` argument has been added. It can be the current program
-counter (the address of the instruction) or `#f`. If it's `#f` then
-symbolic expressions are used in place of a computed PC-relative
-address.
+See [NEWS.md](NEWS.md).
 
 ## Contributions
 
