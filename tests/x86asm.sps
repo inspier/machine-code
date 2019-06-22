@@ -1,6 +1,6 @@
 #!/usr/bin/env scheme-script
 ;; -*- mode: scheme; coding: utf-8 -*- !#
-;; Copyright © 2008, 2009, 2010, 2011, 2016, 2017, 2018 Göran Weinholt <goran@weinholt.se>
+;; Copyright © 2008, 2009, 2010, 2011, 2016, 2017, 2018, 2019 Göran Weinholt <goran@weinholt.se>
 ;; SPDX-License-Identifier: MIT
 #!r6rs
 
@@ -29,11 +29,11 @@
 (define (round-trip instruction mode)
   ;; Check that it's possible to encode the given instruction and then
   ;; disassemble it.
-  (let*-values (((bv symbols) (assemble (list '(%origin 0)
+  (let*-values ([(bv symbols) (assemble (list '(%origin 0)
                                               `(%mode ,mode)
-                                              instruction)))
-                ((port) (open-bytevector-input-port bv))
-                ((bytes-returned) 0))
+                                              instruction))]
+                [(port) (open-bytevector-input-port bv)]
+                [(bytes-returned) 0])
     (let ((instruction
            (get-instruction port mode
                             (lambda (_ . bytes)
@@ -50,9 +50,9 @@
       instruction)))
 
 (define (encode instruction mode)
-  (let-values (((bv syms) (assemble (list '(%origin 0)
+  (let-values ([(bv syms) (assemble (list '(%origin 0)
                                           `(%mode ,mode)
-                                          instruction))))
+                                          instruction))])
     bv))
 
 (test '(hlt) 64)
@@ -261,6 +261,23 @@
       ;; (mov (mem+ #xff00ff00ffffffff) ax)
       ;; (mov (mem+ #xff00ff00ffffffff) eax)
 ;; (mov (mem+ #xff00ff00ffffffff) rax)
+
+;;; Equate
+
+(define (assembler->bv . code)
+  (let-values ([(bv _) (assemble code)]) bv))
+
+(check (assembler->bv '(%equiv foo 1)
+                      '(%u8 foo))
+       => #vu8(1))
+
+(check (assembler->bv '(%origin 0)
+                      '(%label foo)
+                      '(%vu8 #vu8(0 1 2 3))
+                      '(%label bar)
+                      '(%equiv baz (- bar foo))
+                      '(%u32 baz))
+       => #vu8(0 1 2 3 4 0 0 0))
 
 (check-report)
 (exit (if (check-passed? 110) 0 1))

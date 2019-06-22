@@ -502,13 +502,10 @@
     (cond
      ((not instr)
       #f)
-
-     ((and (list? instr) (eq? (car instr) '*prefix*))
+     ((and (pair? instr) (eq? (car instr) '*prefix*))
       #f)
-
-     ((list? instr)
+     ((pair? instr)
       (f instr (reverse bytes)))
-
      (else
       (case (vector-ref instr 0)
         ((Group)
@@ -531,42 +528,33 @@
            (if (> (vector-length instr) 3)
                (walk-modr/m-table (vector-ref instr 3) #b11)
                '())))
-
         ((Prefix)
          (walk-opcodes f (vector-ref instr 1) bytes)
          (walk-opcodes f (vector-ref instr 2) (append bytes (list (list 'prefix #xF3))))
          (walk-opcodes f (vector-ref instr 3) (append bytes (list (list 'prefix #x66))))
          (walk-opcodes f (vector-ref instr 4) (append bytes (list (list 'prefix #xF2)))))
-
         ((Datasize)
          (walk-opcodes f (vector-ref instr 1) (append bytes (list 'data16)))
          (walk-opcodes f (vector-ref instr 2) (append bytes (list 'data32)))
          (walk-opcodes f (vector-ref instr 3) (append bytes (list 'data64))))
-
         ((Addrsize)
          (walk-opcodes f (vector-ref instr 2) (append bytes (list 'addr32)))
          (walk-opcodes f (vector-ref instr 3) (append bytes (list 'addr64))))
-
         ((Mode)
          (walk-opcodes f (vector-ref instr 1) (append bytes (list 'legacy-mode)))
          (walk-opcodes f (vector-ref instr 2) (append bytes (list 'long-mode))))
-
         ((VEX)                          ;FIXME: handle this
          (walk-opcodes f (vector-ref instr (if (= (vector-length instr) 3) 2 3))
                        (append bytes (list 'vex.256)))
          (walk-opcodes f (vector-ref instr 2) (append bytes (list 'vex.128)))
          (walk-opcodes f (vector-ref instr 1) bytes))
-
         ((Mem/reg)                      ;FIXME: handle this
          (walk-opcodes f (vector-ref instr 1) (append bytes (list 'mem)))
          (walk-opcodes f (vector-ref instr 2) (append bytes (list 'reg))))
-
         ((d64)
          (walk-opcodes f (vector-ref instr 1) (append bytes (list 'd64))))
-
         ((f64)
          (walk-opcodes f (vector-ref instr 1) (append bytes (list 'f64))))
-
         ;; Ignore future extensions to the opcode table.
         (else
          (unless (symbol? (vector-ref instr 0))
@@ -1207,6 +1195,10 @@
        (hashtable-set! (assembler-state-labels state)
                        (cadr instr)
                        (assembler-state-ip state)))
+      ((%equiv)
+       (hashtable-set! (assembler-state-labels state)
+                       (cadr instr)
+                       (eval-expression (caddr instr) (assembler-state-labels state))))
       ((%mode)
        (assembler-state-mode-set! state (cadr instr)))
       ((%origin)
@@ -1309,7 +1301,7 @@
 
   (define (limited-translate-operands instr mode)
     (case (car instr)
-      ((%section %align %utf8z %vu8 %origin %label %comm %mode)
+      ((%section %align %utf8z %vu8 %origin %label %comm %mode %equiv)
        instr)
       ((%call)
        (let ((operands (translate-operands (cddr instr) mode))
@@ -1369,6 +1361,17 @@
                   (lp (cdr code) mode
                       (cons (list name end 'bss) symbols)
                       section (cons (car code) ret))))
+               ((%equiv)
+                (check-label (car code))
+                (let ((operands (translate-operands (cddar code) mode)))
+                  (for-each (lambda (op)
+                              (for-each (lambda (x)
+                                          (hashtable-set! used-labels x #t))
+                                        (operand-labels op)))
+                            operands)
+                  (lp (cdr code) mode symbols section
+                      (cons `(,(caar code) ,(cadar code) ,@operands)
+                            ret))))
                ((%section)
                 (lp (cdr code) mode symbols (cadar code) (cons (car code) ret)))
                ((%align %utf8z %vu8 %origin)
