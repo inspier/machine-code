@@ -21,11 +21,12 @@ case $(uname -m) in
         ;;
 esac
 
-if [ "x$SCHEME" != "xSagittariusScheme" ]; then
-    # Disabled in Sagittarius for now due to bad performance.
+env
+if [ "x$CIRCLE_STAGE" != "xtest-sagittarius" ]; then
+    # Disabled in Sagittarius for now due to some hang.
     programs/fcdisasm.sps -b 32 x86-demo.image | grep -C 5 rep
     programs/fcdisasm.sps -b 32 x86-linux-demo.image
-    if [ "x$SCHEME" = "xChezScheme" ]; then
+    if [ "x$CIRCLE_STAGE" = "xtest-chezscheme" ]; then
         tests/arm-a64.sps
     fi
 fi
