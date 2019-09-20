@@ -91,10 +91,9 @@
     (define (string-index s c)
       (let lp ((i 0))
         (and (not (fx=? i (string-length s)))
-             (let ((c* (string-ref s i)))
-               (if (eq? c c*)
-                   i
-                   (lp (fx+ i 1)))))))
+             (if (eqv? c (string-ref s i))
+                 i
+                 (lp (fx+ i 1))))))
     (let ((i (string-index s c)))
       (and i (list (substring s 0 i)
                    (substring s (+ 1 i) (string-length s))))))
